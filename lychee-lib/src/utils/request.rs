@@ -12,6 +12,7 @@ use crate::{
     types::{InputSource, uri::raw::RawUri},
     utils::{path, url},
 };
+use crate::types::ResolvedInputSource;
 
 /// Extract basic auth credentials for a given URL.
 pub(crate) fn extract_credentials(
@@ -24,7 +25,7 @@ pub(crate) fn extract_credentials(
 /// Create a request from a raw URI.
 fn create_request(
     raw_uri: &RawUri,
-    source: &InputSource,
+    source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
     base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
@@ -51,11 +52,12 @@ fn create_request(
 /// - If the source is not a file path (i.e. the URI type is not supported).
 fn try_parse_into_uri(
     raw_uri: &RawUri,
-    source: &InputSource,
+    source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
     base: Option<&Base>,
     // XXX: SHIM EXPERIMENT HERE. REPLACE ROOT+BASE.
 ) -> Result<Uri> {
+    println!("fdsjai {:?} {:?}", raw_uri, source);
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
     let uri = match Uri::try_from(raw_uri.clone()) {
         Ok(uri) => uri,
@@ -65,7 +67,7 @@ fn try_parse_into_uri(
                 None => return Err(ErrorKind::InvalidBaseJoin(text.clone())),
             },
             None => match source {
-                InputSource::FsPath(root) => {
+                ResolvedInputSource::FsPath(root) => {
                     create_uri_from_file_path(root, &text, false)?
                 }
                 _ => return Err(ErrorKind::UnsupportedUriType(text)),
@@ -118,12 +120,12 @@ fn create_uri_from_file_path(
 /// This is only needed for string inputs.
 /// For other inputs, the source is simply a "label" (an enum variant).
 // TODO: This would not be necessary if we used `Cow` for the source.
-fn truncate_source(source: &InputSource) -> InputSource {
+fn truncate_source(source: &ResolvedInputSource) -> ResolvedInputSource {
     const MAX_TRUNCATED_STR_LEN: usize = 100;
 
     match source {
-        InputSource::String(s) => {
-            InputSource::String(s.chars().take(MAX_TRUNCATED_STR_LEN).collect())
+        ResolvedInputSource::String(s) => {
+            ResolvedInputSource::String(s.chars().take(MAX_TRUNCATED_STR_LEN).collect())
         }
         other => other.clone(),
     }
@@ -136,12 +138,13 @@ fn truncate_source(source: &InputSource) -> InputSource {
 /// it will not be added to the `HashSet`.
 pub(crate) fn create(
     uris: Vec<RawUri>,
-    source: &InputSource,
+    source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
     base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> HashSet<Request> {
-    let base = base.cloned().or_else(|| Base::from_source(source));
+    let x: InputSource = source.clone().into();
+    let base = base.cloned().or_else(|| Base::from_source(&x));
 
     uris.into_iter()
         .filter_map(|raw_uri| {
@@ -542,7 +545,7 @@ mod tests {
     #[test]
     fn test_parse_relative_path_into_uri() {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
-        let source = InputSource::String(String::new());
+        let source = ResolvedInputSource::String(String::new());
 
         let raw_uri = RawUri::from("relative.html");
         let uri = try_parse_into_uri(&raw_uri, &source, None, Some(&base)).unwrap();
@@ -553,7 +556,7 @@ mod tests {
     #[test]
     fn test_parse_absolute_path_into_uri() {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
-        let source = InputSource::String(String::new());
+        let source = ResolvedInputSource::String(String::new());
 
         let raw_uri = RawUri::from("absolute.html");
         let uri = try_parse_into_uri(&raw_uri, &source, None, Some(&base)).unwrap();
