@@ -28,6 +28,10 @@ pub(crate) fn create(cfg: &Config, cookie_jar: Option<&Arc<CookieStoreMutex>>) -
 
     let headers = HeaderMap::from_header_pairs(&cfg.header)?;
 
+    let expbasemap = cfg.experimental_mapping.chunks_exact(2).map(|x| {
+        (&x[0], &x[1])
+    });
+
     ClientBuilder::builder()
         .remaps(remaps)
         .base(cfg.base_url.clone())

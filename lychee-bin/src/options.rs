@@ -708,6 +708,16 @@ followed by the absolute link's own path."
     #[serde(default)]
     pub(crate) root_dir: Option<PathBuf>,
 
+
+    /// TODO: help text
+    #[arg(
+        long,
+        long_help = "Experimental",
+        num_args = 2
+    )]
+    #[serde(default)]
+    pub(crate) experimental_mapping: Vec<String>,
+
     /// Basic authentication support. E.g. `http://example.com username:password`
     #[arg(long)]
     #[serde(default)]
@@ -825,6 +835,7 @@ impl Config {
             exclude: Vec::<String>::new();
             extensions: FileType::default_extensions();
             fallback_extensions: Vec::<String>::new();
+            experimental_mapping: Vec::<String>::new();
             format: StatsFormat::default();
             glob_ignore_case: false;
             header: Vec::<(String, String)>::new();

@@ -54,6 +54,7 @@ fn try_parse_into_uri(
     source: &InputSource,
     root_dir: Option<&PathBuf>,
     base: Option<&Base>,
+    // XXX: SHIM EXPERIMENT HERE. REPLACE ROOT+BASE.
 ) -> Result<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
     let uri = match Uri::try_from(raw_uri.clone()) {
@@ -65,7 +66,7 @@ fn try_parse_into_uri(
             },
             None => match source {
                 InputSource::FsPath(root) => {
-                    create_uri_from_file_path(root, &text, root_dir.is_none())?
+                    create_uri_from_file_path(root, &text, false)?
                 }
                 _ => return Err(ErrorKind::UnsupportedUriType(text)),
             },

@@ -496,6 +496,8 @@ impl Client {
             return Ok(Response::new(uri.clone(), Status::Excluded, source));
         }
 
+        println!("asdf {:?}", uri);
+
         let status = match uri.scheme() {
             // We don't check tel: URIs
             _ if uri.is_tel() => Status::Excluded,
