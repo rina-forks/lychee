@@ -3,6 +3,7 @@ use percent_encoding::percent_decode_str;
 use reqwest::Url;
 use std::borrow::Cow;
 use std::ops::Deref;
+use std::sync::LazyLock;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -42,18 +43,18 @@ fn create_request(
     Ok(Request::new(uri, source, element, attribute, credentials))
 }
 
-fn apply_base(input: &str, base: Option<&Url>) -> std::result::Result<Url, ParseError> {
-    let secret_local_base =
-        reqwest::Url::parse("ftp://secret-lychee-local-base-url.internal/").unwrap();
+static FAKE_BASE_URL: LazyLock<Url> =
+    LazyLock::new(|| reqwest::Url::parse("ftp://secret-lychee-local-base-url.invalid/").unwrap());
 
+fn apply_base(input: &str, base: Option<&Url>) -> std::result::Result<Url, ParseError> {
     let fake_base = base.clone().map(|base| match base {
-        base if base.scheme() == "file" => &secret_local_base,
+        base if base.scheme() == "file" => &*FAKE_BASE_URL,
         base => base,
     });
 
     let url = reqwest::Url::options().base_url(fake_base).parse(input)?;
 
-    match secret_local_base.make_relative(&url) {
+    match FAKE_BASE_URL.make_relative(&url) {
         Some(subpath) => base.unwrap().join(&subpath),
         None => Ok(url),
     }
