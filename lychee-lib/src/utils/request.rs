@@ -103,7 +103,7 @@ fn try_parse_into_uri(
             // println!("{:?}", remote_base.join("/rooted file "));
             let source_base = match source {
                 InputSource::RemoteUrl(url) => Some(Cow::Borrowed(url.deref())),
-                InputSource::FsPath(path) => match path.canonicalize() {
+                InputSource::FsPath(path) => match std::path::absolute(path) {
                     Ok(path) => path
                         .strip_prefix(&*root_dir)
                         .ok()
