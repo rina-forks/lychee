@@ -292,7 +292,7 @@ impl Collector {
                     let requests = request::create(
                         uris,
                         &content.source,
-                        root_dir.as_ref(),
+                        root_dir.as_deref(),
                         base.as_ref(),
                         basic_auth_extractor.as_ref(),
                     );

@@ -40,6 +40,21 @@ pub enum InputSource {
     String(String),
 }
 
+impl InputSource {
+    /// Converts a [`Self::RemoteUrl`] or [`Self::FsPath`] to a
+    /// [`Url`], if possible.
+    ///
+    /// Returns `None` if the [`InputSource`] is not these cases,
+    /// of if the `FsPath` is not a valid URL.
+    pub fn to_url(&self) -> Option<Url> {
+        match self {
+            Self::RemoteUrl(url) => Some(*url.clone()),
+            Self::FsPath(path) => Url::from_file_path(path.canonicalize().ok()?).ok(),
+            _ => None,
+        }
+    }
+}
+
 /// Resolved input sources that can be processed for content.
 ///
 /// This represents input sources after glob pattern expansion.

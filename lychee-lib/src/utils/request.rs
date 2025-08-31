@@ -2,6 +2,7 @@ use log::warn;
 use percent_encoding::percent_decode_str;
 use reqwest::Url;
 use std::borrow::Cow;
+use std::ops::Deref;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -26,7 +27,7 @@ pub(crate) fn extract_credentials(
 fn create_request(
     raw_uri: &RawUri,
     source: &InputSource,
-    root_dir: Option<&PathBuf>,
+    root_dir: Option<&Path>,
     base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Result<Request> {
@@ -53,41 +54,58 @@ fn create_request(
 fn try_parse_into_uri(
     raw_uri: &RawUri,
     source: &InputSource,
-    root_dir: Option<&PathBuf>,
+    root_dir: Option<&Path>,
     base: Option<&Base>,
 ) -> Result<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
 
     let base = base
-        .map(Cow::Borrowed)
-        .or_else(|| root_dir.map(|root| Cow::Owned(Base::Local(root.clone()))));
+        .and_then(Base::to_url)
+        .or_else(|| root_dir.and_then(|root| Url::from_file_path(root).ok()));
+
+    println!("{:?}", base.clone().unwrap().join("not rooted"));
+    println!("{:?}", base.clone().unwrap().join("/rooted"));
 
     // 1. graft input source - if source is a FsPath subdirectory of root_dir,
     //    replace InputSource with RemoteUrl.
 
     // 2. map root_dir to base.
 
+    // let root_dir_url = root_dir
+    //     .map(Path::to_string_lossy)
+    //     .map(|x| Url::from_file_path(&*x).expect("file path to url failed?!"));
+    // let root_dir = root_dir_url.as_ref().map(Url::as_str);
+
     match (base, root_dir) {
         (Some(remote_base), Some(root_dir)) => {
-            let source_base = match Base::from_source(source) {
-                Some(Base::Local(local_base)) => {
-                    println!("{local_base:?}");
-                    match local_base.strip_prefix(root_dir) {
-                        Ok(subpath) => {
-                            let subpath = subpath.to_string_lossy();
-                            Base::Remote(remote_base.to_url().unwrap().join(&subpath).unwrap())
-                        }
-                        Err(_) => Base::Local(local_base),
-                    }
-                    .into()
-                }
-                x => x,
+            println!("{:?}", remote_base.join("/rooted file "));
+            let source_base = match source {
+                InputSource::RemoteUrl(url) => Some(Cow::Borrowed(url.deref())),
+                InputSource::FsPath(path) => match path.canonicalize() {
+                    Ok(path) => path
+                        .strip_prefix(&*root_dir)
+                        .ok()
+                        .map(|subpath| {
+                            // let subpath = subpath.strip_prefix(subpath.join("/")).unwrap_or(subpath);
+                            println!("subpath = {:?}", subpath);
+                            remote_base.join(&subpath.to_string_lossy()).expect("joining failed?!")
+                        })
+                        .map(Cow::Owned)
+                        .or_else(|| {
+                            Some(Cow::Owned(
+                                Url::from_file_path(path).expect("path to url failed?"),
+                            ))
+                        }),
+                    Err(_) => None,
+                },
+                _ => None,
             };
 
-            let base2 = source_base.as_ref().and_then(Base::to_url);
+            let base2 = source_base;
+            println!("base = {:?}, uri = {:?}", base2.as_deref(), &raw_uri.text);
 
             let ads = reqwest::Url::options()
-                .base_url(base2.as_ref())
+                .base_url(base2.as_deref())
                 .parse(&raw_uri.text)
                 .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()));
             let x = ads?;
@@ -176,7 +194,7 @@ fn truncate_source(source: &InputSource) -> InputSource {
 pub(crate) fn create(
     uris: Vec<RawUri>,
     source: &InputSource,
-    root_dir: Option<&PathBuf>,
+    root_dir: Option<&Path>,
     base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> HashSet<Request> {
@@ -231,7 +249,7 @@ fn resolve_and_create_url(
     Ok(url)
 }
 
-fn prepend_root_dir_if_absolute_local_link(text: &str, root_dir: Option<&PathBuf>) -> String {
+fn prepend_root_dir_if_absolute_local_link(text: &str, root_dir: Option<&Path>) -> String {
     if text.starts_with('/') {
         if let Some(path) = root_dir {
             if let Some(path_str) = path.to_str() {
