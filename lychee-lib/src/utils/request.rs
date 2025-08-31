@@ -15,6 +15,8 @@ use crate::{
     utils::{path, url},
 };
 
+use ::url::ParseError;
+
 /// Extract basic auth credentials for a given URL.
 pub(crate) fn extract_credentials(
     extractor: Option<&BasicAuthExtractor>,
@@ -40,6 +42,23 @@ fn create_request(
     Ok(Request::new(uri, source, element, attribute, credentials))
 }
 
+fn apply_base(input: &str, base: Option<&Url>) -> std::result::Result<Url, ParseError> {
+    let secret_local_base =
+        reqwest::Url::parse("ftp://secret-lychee-local-base-url.internal/").unwrap();
+
+    let fake_base = base.clone().map(|base| match base {
+        base if base.scheme() == "file" => &secret_local_base,
+        base => base,
+    });
+
+    let url = reqwest::Url::options().base_url(fake_base).parse(input)?;
+
+    match secret_local_base.make_relative(&url) {
+        Some(subpath) => base.unwrap().join(&subpath),
+        None => Ok(url),
+    }
+}
+
 /// Try to parse the raw URI into a `Uri`.
 ///
 /// If the raw URI is not a valid URI, create a URI by joining the base URL with the text.
@@ -59,13 +78,14 @@ fn try_parse_into_uri(
 ) -> Result<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
 
-    println!("{:?}", base.clone().unwrap().join("/rooted"));
+    // println!("{:?}", base.clone().unwrap().join("/rooted"));
     let base = base
         .and_then(Base::to_url)
         .or_else(|| root_dir.and_then(|root| Url::from_file_path(root).ok()));
+    println!("{:?}", apply_base(&raw_uri.text, base.as_ref()));
 
-    println!("{:?}", base.clone().unwrap().join("not rooted"));
-    println!("{:?}", base.clone().unwrap().join("/rooted"));
+    // println!("{:?}", base.clone().unwrap().join("not rooted"));
+    // println!("{:?}", base.clone().unwrap().join("/rooted"));
 
     // 1. graft input source - if source is a FsPath subdirectory of root_dir,
     //    replace InputSource with RemoteUrl.
@@ -79,7 +99,7 @@ fn try_parse_into_uri(
 
     match (base, root_dir) {
         (Some(remote_base), Some(root_dir)) => {
-            println!("{:?}", remote_base.join("/rooted file "));
+            // println!("{:?}", remote_base.join("/rooted file "));
             let source_base = match source {
                 InputSource::RemoteUrl(url) => Some(Cow::Borrowed(url.deref())),
                 InputSource::FsPath(path) => match path.canonicalize() {
@@ -91,7 +111,7 @@ fn try_parse_into_uri(
                             println!("subpath = {:?}", subpath);
                             remote_base
                                 .join(&subpath.to_string_lossy())
-                                .expect("joining failed?!")
+                                .expect("joining onto base url failed?!")
                         })
                         .map(Cow::Owned)
                         .or_else(|| {
@@ -105,19 +125,12 @@ fn try_parse_into_uri(
             };
 
             let base2 = source_base;
-            println!("base = {:?}, uri = {:?}", base2.as_deref(), &raw_uri.text);
+            // println!("base = {:?}, uri = {:?}", base2.as_deref(), &raw_uri.text);
 
-            let ads = match base2.as_deref() {
-                // Some(base) if base.scheme() == "file" => {
-                //
-                // }
-                _ => reqwest::Url::options()
-                    .base_url(base2.as_deref())
-                    .parse(&raw_uri.text)
-                    .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone())),
-            };
+            let ads = apply_base(&raw_uri.text, base2.as_deref())
+                .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()));
             let x = ads?;
-            println!("{:?}", x.as_str());
+            // println!("{:?}", x.as_str());
 
             // TODO: MAP BACK TO local root dir by checking if ads starts with base.
 
