@@ -1,6 +1,7 @@
 use log::warn;
 use percent_encoding::percent_decode_str;
 use reqwest::Url;
+use std::borrow::Cow;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -56,22 +57,61 @@ fn try_parse_into_uri(
     base: Option<&Base>,
 ) -> Result<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
-    let uri = match Uri::try_from(raw_uri.clone()) {
-        Ok(uri) => uri,
-        Err(_) => match base {
-            Some(base_url) => match base_url.join(&text) {
-                Some(url) => Uri { url },
-                None => return Err(ErrorKind::InvalidBaseJoin(text.clone())),
-            },
-            None => match source {
-                InputSource::FsPath(root) => {
-                    create_uri_from_file_path(root, &text, root_dir.is_none())?
+
+    let base = base
+        .map(Cow::Borrowed)
+        .or_else(|| root_dir.map(|root| Cow::Owned(Base::Local(root.clone()))));
+
+    // 1. graft input source - if source is a FsPath subdirectory of root_dir,
+    //    replace InputSource with RemoteUrl.
+
+    // 2. map root_dir to base.
+
+    match (base, root_dir) {
+        (Some(remote_base), Some(root_dir)) => {
+            let source_base = match Base::from_source(source) {
+                Some(Base::Local(local_base)) => {
+                    println!("{local_base:?}");
+                    match local_base.strip_prefix(root_dir) {
+                        Ok(subpath) => {
+                            let subpath = subpath.to_string_lossy();
+                            Base::Remote(remote_base.to_url().unwrap().join(&subpath).unwrap())
+                        }
+                        Err(_) => Base::Local(local_base),
+                    }
+                    .into()
                 }
-                _ => return Err(ErrorKind::UnsupportedUriType(text)),
-            },
-        },
-    };
-    Ok(uri)
+                x => x,
+            };
+
+            let base2 = source_base.as_ref().and_then(Base::to_url);
+
+            let ads = reqwest::Url::options()
+                .base_url(base2.as_ref())
+                .parse(&raw_uri.text)
+                .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()));
+            let x = ads?;
+            println!("{:?}", x.as_str());
+
+            // TODO: MAP BACK TO local root dir by checking if ads starts with base.
+
+            // let uri = match Uri::try_from(raw_uri.clone()) {
+            //     Ok(uri) => uri,
+            //     Err(_) => match base {
+            //         Some(base_url) => match base_url.join(&text) {
+            //             Some(url) => Uri { url },
+            //             None => return Err(ErrorKind::InvalidBaseJoin(text.clone())),
+            //         },
+            //         None => panic!("no base :((((("),
+            //     },
+            // };
+            // println!(" = {uri:?}");
+            Ok(Uri { url: x })
+        }
+        _ => panic!("fdjsiao"),
+    }
+
+    // let base = base.and_then(Base::to_url);
 }
 
 // Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
@@ -140,18 +180,16 @@ pub(crate) fn create(
     base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> HashSet<Request> {
-    let base = base.cloned().or_else(|| Base::from_source(source));
-
     uris.into_iter()
-        .filter_map(|raw_uri| {
-            match create_request(&raw_uri, source, root_dir, base.as_ref(), extractor) {
+        .filter_map(
+            |raw_uri| match create_request(&raw_uri, source, root_dir, base, extractor) {
                 Ok(request) => Some(request),
                 Err(e) => {
                     warn!("Error creating request: {e:?}");
                     None
                 }
-            }
-        })
+            },
+        )
         .collect()
 }
 

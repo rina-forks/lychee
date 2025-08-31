@@ -30,6 +30,13 @@ impl Base {
         }
     }
 
+    pub(crate) fn to_url(&self) -> Option<Url> {
+        match self {
+            Self::Remote(url) => Some(url.clone()),
+            Self::Local(path) => Url::from_file_path(path).ok(),
+        }
+    }
+
     pub(crate) fn from_source(source: &InputSource) -> Option<Base> {
         match &source {
             InputSource::RemoteUrl(url) => {
@@ -42,6 +49,7 @@ impl Base {
                 // We keep the username and password intact
                 Some(Base::Remote(*base_url))
             }
+            InputSource::FsPath(path) => path.to_path_buf().canonicalize().ok().map(Base::Local),
             // other inputs do not have a URL to extract a base
             _ => None,
         }
