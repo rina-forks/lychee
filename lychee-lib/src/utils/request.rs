@@ -59,6 +59,7 @@ fn try_parse_into_uri(
 ) -> Result<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
 
+    println!("{:?}", base.clone().unwrap().join("/rooted"));
     let base = base
         .and_then(Base::to_url)
         .or_else(|| root_dir.and_then(|root| Url::from_file_path(root).ok()));
@@ -88,7 +89,9 @@ fn try_parse_into_uri(
                         .map(|subpath| {
                             // let subpath = subpath.strip_prefix(subpath.join("/")).unwrap_or(subpath);
                             println!("subpath = {:?}", subpath);
-                            remote_base.join(&subpath.to_string_lossy()).expect("joining failed?!")
+                            remote_base
+                                .join(&subpath.to_string_lossy())
+                                .expect("joining failed?!")
                         })
                         .map(Cow::Owned)
                         .or_else(|| {
@@ -104,10 +107,15 @@ fn try_parse_into_uri(
             let base2 = source_base;
             println!("base = {:?}, uri = {:?}", base2.as_deref(), &raw_uri.text);
 
-            let ads = reqwest::Url::options()
-                .base_url(base2.as_deref())
-                .parse(&raw_uri.text)
-                .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()));
+            let ads = match base2.as_deref() {
+                // Some(base) if base.scheme() == "file" => {
+                //
+                // }
+                _ => reqwest::Url::options()
+                    .base_url(base2.as_deref())
+                    .parse(&raw_uri.text)
+                    .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone())),
+            };
             let x = ads?;
             println!("{:?}", x.as_str());
 
