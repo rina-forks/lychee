@@ -99,10 +99,10 @@ fn try_parse_into_uri(
     // let root_dir = root_dir_url.as_ref().map(Url::as_str);
 
     match (base, root_dir) {
-        (Some(remote_base), Some(root_dir)) => {
+        (Some(ref remote_base), Some(root_dir)) => {
             // println!("{:?}", remote_base.join("/rooted file "));
-            let source_base = match source {
-                InputSource::RemoteUrl(url) => Some(Cow::Borrowed(url.deref())),
+            let thingy = match source {
+                InputSource::RemoteUrl(url) => Some((Cow::Borrowed(url.deref()), Cow::Borrowed(""), true)),
                 InputSource::FsPath(path) => match std::path::absolute(path) {
                     Ok(path) => path
                         .strip_prefix(&*root_dir)
@@ -110,20 +110,17 @@ fn try_parse_into_uri(
                         .map(|subpath| {
                             // let subpath = subpath.strip_prefix(subpath.join("/")).unwrap_or(subpath);
                             println!("subpath = {:?}", subpath);
-                            remote_base
-                                .join(&subpath.to_string_lossy())
-                                .expect("joining onto base url failed?!")
+                            (Cow::Borrowed(remote_base), subpath.to_string_lossy(), true)
                         })
-                        .map(Cow::Owned)
                         .or_else(|| {
-                            Some(Cow::Owned(
-                                Url::from_file_path(path).expect("path to url failed?"),
-                            ))
+                            Some((Cow::Owned(
+                                Url::from_file_path(&path).expect("path to url failed?")), Cow::Borrowed(""), false))
                         }),
                     Err(_) => None,
                 },
                 _ => None,
             };
+            let source_base = thingy.map(|x| x.0);
 
             let base2 = source_base;
             // println!("base = {:?}, uri = {:?}", base2.as_deref(), &raw_uri.text);
