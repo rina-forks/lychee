@@ -120,7 +120,7 @@ fn try_parse_into_uri(
     // let root_dir = root_dir_url.as_ref().map(Url::as_str);
     //
 
-    let fallback_local_base = |url: &Url| -> Option<_> {
+    let infer_source_base = |url: &Url| -> Option<_> {
         let top = url.join("/").ok()?;
         let subpath = top.make_relative(&url)?;
         Some((Cow::Owned(top), Cow::Owned(subpath), url.scheme() != "file"))
@@ -129,14 +129,14 @@ fn try_parse_into_uri(
     let source_url = source.to_url()?;
 
     let base_info = match &source_url {
-        Some(url) => match (base_url.as_deref(), &root_dir_url) {
-            (Some(base_url), Some(root_dir_url)) => url
+        Some(source_url) => match (base_url.as_deref(), &root_dir_url) {
+            (Some(base_url), Some(root_dir_url)) => source_url
                 .strip_prefix(root_dir_url)
                 .map(|subpath| (Cow::Borrowed(base_url), Cow::Owned(subpath), true)),
             _ => None,
         }
         .map_or_else(
-            || fallback_local_base(url).ok_or(ErrorKind::InvalidUrlHost),
+            || infer_source_base(source_url).ok_or(ErrorKind::InvalidUrlHost),
             Ok,
         )?
         .into(),
@@ -163,7 +163,7 @@ fn try_parse_into_uri(
                 }
             })
         }
-        None => Url::parse(&raw_uri.text)
+        None => Url::parse(&raw_uri.text),
     }
     // .inspect(|x| println!("-----> {}", x))
     .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()))
