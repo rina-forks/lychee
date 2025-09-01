@@ -30,10 +30,11 @@ impl Base {
         }
     }
 
-    pub(crate) fn to_url(&self) -> Option<Url> {
+    pub(crate) fn to_url(&self) -> Result<Url, ErrorKind> {
         match self {
-            Self::Remote(url) => Some(url.clone()),
-            Self::Local(path) => Url::from_file_path(path).ok(),
+            Self::Remote(url) => Ok(url.clone()),
+            Self::Local(path) => Url::from_file_path(path)
+                .map_err(|()| ErrorKind::InvalidUrlFromPath(path.to_owned())),
         }
     }
 
