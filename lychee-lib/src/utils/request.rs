@@ -95,10 +95,7 @@ fn try_parse_into_uri(
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
 
     let root_dir_url = root_dir
-        .map(|path| {
-            Url::from_directory_path(path)
-                .map_err(|()| ErrorKind::InvalidUrlFromPath(path.to_owned()))
-        })
+        .map(|path| Base::Local(path.to_owned()).to_url())
         .transpose()?;
 
     // println!("{:?}", base.clone());
