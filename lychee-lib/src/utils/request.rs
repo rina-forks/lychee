@@ -47,6 +47,7 @@ static FAKE_BASE_URL: LazyLock<Url> =
     LazyLock::new(|| reqwest::Url::parse("ftp://secret-lychee-local-base-url.invalid/").unwrap());
 
 fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url, ParseError> {
+    println!("applying {}, {}, {}", base, subpath, link);
     // tests:
     // - .. out of local base should be blocked.
     // - scheme-relative urls should work and not spuriously trigger base url
@@ -74,6 +75,7 @@ fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url,
         Some(relative_to_base) => base.join(&relative_to_base),
         None => Ok(url),
     }
+    .inspect(|x| println!("= {}", x))
 }
 
 /// Try to parse the raw URI into a `Uri`.
@@ -102,7 +104,7 @@ fn try_parse_into_uri(
         None => None,
     };
 
-    // println!("{:?}", base.clone().unwrap().join("/rooted"));
+    // println!("{:?}", base.clone());
     let base: Option<Url> = base
         .map(Cow::Borrowed)
         .or_else(|| root_dir.map(|d| Base::Local(d.to_owned())).map(Cow::Owned))
@@ -154,7 +156,7 @@ fn try_parse_into_uri(
         },
         _ => None,
     };
-    println!("{} {:?}", &raw_uri.text, &base_info);
+    // println!("{} {:?}", &raw_uri.text, &base_info);
 
     match base_info {
         Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with("/") => {
@@ -163,7 +165,7 @@ fn try_parse_into_uri(
         Some((base, subpath, _)) => {
             apply_base(&base, &subpath, &raw_uri.text).and_then(|url| {
                 match (base.make_relative(&url), &root_dir_url) {
-                    (Some(base_url_subpath), Some(root_dir_url)) => {
+                    (Some(base_url_subpath), Some(root_dir_url)) if !base_url_subpath.starts_with("..") => {
                         root_dir_url.join(&base_url_subpath)
                     }
                     _ => Ok(url),
