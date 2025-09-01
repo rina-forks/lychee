@@ -33,8 +33,10 @@ impl Base {
     pub(crate) fn to_url(&self) -> Result<Url, ErrorKind> {
         match self {
             Self::Remote(url) => Ok(url.clone()),
-            Self::Local(path) => Url::from_file_path(path)
-                .map_err(|()| ErrorKind::InvalidUrlFromPath(path.to_owned())),
+            Self::Local(path) => std::path::absolute(path)
+                .ok()
+                .and_then(|x| Url::from_directory_path(x).ok())
+                .ok_or_else(|| ErrorKind::InvalidUrlFromPath(path.to_owned())),
         }
     }
 

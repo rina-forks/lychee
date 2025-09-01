@@ -1,5 +1,13 @@
 use std::error::Error;
 
+impl ReqwestUrlExt for reqwest::Url {
+
+    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String> {
+        prefix.make_relative(self).filter(|subpath| !subpath.starts_with("../"))
+    }
+
+}
+
 /// A rule for matching error message patterns to human-readable messages
 struct ErrorRule {
     patterns: &'static [&'static str],

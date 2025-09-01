@@ -75,7 +75,6 @@ fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url,
         Some(relative_to_base) => base.join(&relative_to_base),
         None => Ok(url),
     }
-    .inspect(|x| println!("= {}", x))
 }
 
 /// Try to parse the raw URI into a `Uri`.
@@ -127,17 +126,20 @@ fn try_parse_into_uri(
     // let root_dir = root_dir_url.as_ref().map(Url::as_str);
     //
 
-    let fallback_local_base = |path: &Path| match Url::from_file_path(path) {
-        Ok(path_url) => {
-            let top = path_url.join("/").unwrap();
-            let subpath = top.make_relative(&path_url).unwrap();
-            Ok(move || (Cow::Owned(top), Cow::Owned(subpath), false))
-        }
-        Err(()) => Err(ErrorKind::InvalidUrlFromPath(path.to_owned())),
+    let fallback_local_base = |url: &Url, allow_absolute: bool| {
+        let top = path_url.join("/").unwrap();
+        let subpath = top.make_relative(&path_url).unwrap();
+        move || (Cow::Owned(top), Cow::Owned(subpath), allow_absolute)
     };
 
+    let source_base = source.to_base();
+    let source_url = source_base.as_ref().map(Base::to_url).transpose()?;
+
     // println!("{:?}", remote_base.join("/rooted file "));
-    let base_info: Option<(Cow<Url>, Cow<str>, bool)> = match source {
+    let base_info = source_url.map(|url| match url.strip_prefix(root_dir) {
+        Some(subpath) => (Cow::Borrowed(base), Cow::Owned(subpath), true)
+        None => fallback_local_base(url, true)
+    });
         InputSource::RemoteUrl(url) => Some((Cow::Borrowed(url.deref()), Cow::Borrowed(""), true)),
         InputSource::FsPath(path) => match std::path::absolute(path) {
             Ok(path) => match (&base, &root_dir) {
@@ -165,7 +167,9 @@ fn try_parse_into_uri(
         Some((base, subpath, _)) => {
             apply_base(&base, &subpath, &raw_uri.text).and_then(|url| {
                 match (base.make_relative(&url), &root_dir_url) {
-                    (Some(base_url_subpath), Some(root_dir_url)) if !base_url_subpath.starts_with("..") => {
+                    (Some(base_url_subpath), Some(root_dir_url))
+                        if !base_url_subpath.starts_with("..") =>
+                    {
                         root_dir_url.join(&base_url_subpath)
                     }
                     _ => Ok(url),

@@ -14,6 +14,7 @@
 //!   and filtered by extension
 //! - URLs, raw strings, and standard input (`stdin`) are read directly
 
+use crate::Base;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -42,14 +43,11 @@ pub enum InputSource {
 
 impl InputSource {
     /// Converts a [`Self::RemoteUrl`] or [`Self::FsPath`] to a
-    /// [`Url`], if possible.
-    ///
-    /// Returns `None` if the [`InputSource`] is not these cases,
-    /// of if the `FsPath` is not a valid URL.
-    pub fn to_url(&self) -> Option<Url> {
+    /// [`Base`]. Returns `None` for other `InputSource` variants.
+    pub fn to_base(&self) -> Option<Base> {
         match self {
-            Self::RemoteUrl(url) => Some(*url.clone()),
-            Self::FsPath(path) => Url::from_file_path(path.canonicalize().ok()?).ok(),
+            Self::RemoteUrl(url) => Some(Base::Remote(*url.clone())),
+            Self::FsPath(path) => Some(Base::Local(path.clone())),
             _ => None,
         }
     }
