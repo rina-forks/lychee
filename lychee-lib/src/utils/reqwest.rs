@@ -9,6 +9,8 @@ impl ReqwestUrlExt for reqwest::Url {
         prefix
             .make_relative(self)
             .filter(|subpath| !subpath.starts_with("../"))
+        // .inspect(|x| println!("subpathing {}", x))
+        // .filter(|_| prefix.as_str().starts_with(self.as_str()))
     }
 }
 

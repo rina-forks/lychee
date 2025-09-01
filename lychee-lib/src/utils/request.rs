@@ -153,19 +153,17 @@ fn try_parse_into_uri(
         Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with("/") => {
             Err(ParseError::RelativeUrlWithoutBase)
         }
-        Some((base, subpath, _)) => {
-            apply_base(&base, &subpath, &raw_uri.text).and_then(|url| {
-                match (url.strip_prefix(&base), &root_dir_url) {
-                    (Some(base_url_subpath), Some(root_dir_url)) => {
-                        root_dir_url.join(&base_url_subpath)
-                    }
-                    _ => Ok(url),
-                }
-            })
-        }
+        Some((base, subpath, _allow_absolute)) => apply_base(&base, &subpath, &raw_uri.text)
+            .and_then(|url| match (base_url.as_deref(), &root_dir_url) {
+                (Some(base_url), Some(root_dir_url)) => url
+                    .strip_prefix(&base_url)
+                    .and_then(|subpath| root_dir_url.join(&subpath).ok())
+                    .map_or(Ok(url), Ok),
+                _ => Ok(url),
+            }),
         None => Url::parse(&raw_uri.text),
     }
-    // .inspect(|x| println!("-----> {}", x))
+    .inspect(|x| println!("OUT -----> {}", x))
     .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()))
     .map(|url| Uri { url })
 
