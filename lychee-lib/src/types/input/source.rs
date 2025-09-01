@@ -14,10 +14,11 @@
 //!   and filtered by extension
 //! - URLs, raw strings, and standard input (`stdin`) are read directly
 
-use crate::Base;
+use crate::{Base, ErrorKind};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use std::ops::Deref;
 use std::path::PathBuf;
 
 /// Input types which lychee supports
@@ -42,13 +43,21 @@ pub enum InputSource {
 }
 
 impl InputSource {
-    /// Converts a [`Self::RemoteUrl`] or [`Self::FsPath`] to a
-    /// [`Base`]. Returns `None` for other `InputSource` variants.
-    pub fn to_base(&self) -> Option<Base> {
+    /// Converts an [`InputSource::RemoteUrl`] or [`InputSource::FsPath`]
+    /// to a [`Url`] pointing to the source.
+    ///
+    /// The outer result indicates whether the operation succeeded.
+    /// For `InputSource` variants which are not `RemoteUrl` or `FsPath`,
+    /// the operation will "succeed" with `None`.
+    pub fn to_url(&self) -> Result<Option<Url>, ErrorKind> {
         match self {
-            Self::RemoteUrl(url) => Some(Base::Remote(*url.clone())),
-            Self::FsPath(path) => Some(Base::Local(path.clone())),
-            _ => None,
+            Self::RemoteUrl(url) => Ok(Some(url.deref().clone())),
+            Self::FsPath(path) => std::path::absolute(path)
+                .ok()
+                .and_then(|x| Url::from_file_path(x).ok())
+                .ok_or_else(|| ErrorKind::InvalidUrlFromPath(path.to_owned()))
+                .map(Some),
+            _ => Ok(None),
         }
     }
 }

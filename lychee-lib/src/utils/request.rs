@@ -13,9 +13,8 @@ use crate::{
     Base, BasicAuthCredentials, ErrorKind, Request, Result, Uri,
     basic_auth::BasicAuthExtractor,
     types::{InputSource, uri::raw::RawUri},
-    utils::{path, url},
+    utils::{path, reqwest::ReqwestUrlExt, url},
 };
-
 use ::url::ParseError;
 
 /// Extract basic auth credentials for a given URL.
@@ -43,11 +42,8 @@ fn create_request(
     Ok(Request::new(uri, source, element, attribute, credentials))
 }
 
-static FAKE_BASE_URL: LazyLock<Url> =
-    LazyLock::new(|| reqwest::Url::parse("ftp://secret-lychee-local-base-url.invalid/").unwrap());
-
 fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url, ParseError> {
-    println!("applying {}, {}, {}", base, subpath, link);
+    // println!("applying {}, {}, {}", base, subpath, link);
     // tests:
     // - .. out of local base should be blocked.
     // - scheme-relative urls should work and not spuriously trigger base url
@@ -56,10 +52,11 @@ fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url,
     // - slash should be forbidden for inferred base urls.
     // - percent encoding ;-;
     // - trailing slashes in base-url and/or root-dir
+    // - fragments and query params, on both http and file
     let fake_base = match base.scheme() {
         "file" => {
             let mut fake_base = base.join("/")?;
-            fake_base.set_host(Some("secret-lychee-local-base-url.invalid"))?;
+            fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
             Some(fake_base)
         }
         _ => None,
@@ -75,6 +72,7 @@ fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url,
         Some(relative_to_base) => base.join(&relative_to_base),
         None => Ok(url),
     }
+    .inspect(|x| println!("---> {}", x))
 }
 
 /// Try to parse the raw URI into a `Uri`.
@@ -96,20 +94,19 @@ fn try_parse_into_uri(
 ) -> Result<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
 
-    let root_dir_url = match root_dir {
-        Some(path) => Url::from_directory_path(path)
-            .map_err(|()| ErrorKind::InvalidUrlFromPath(path.to_owned()))?
-            .into(),
-        None => None,
-    };
+    let root_dir_url = root_dir
+        .map(|path| {
+            Url::from_directory_path(path)
+                .map_err(|()| ErrorKind::InvalidUrlFromPath(path.to_owned()))
+        })
+        .transpose()?;
 
     // println!("{:?}", base.clone());
-    let base: Option<Url> = base
-        .map(Cow::Borrowed)
-        .or_else(|| root_dir.map(|d| Base::Local(d.to_owned())).map(Cow::Owned))
-        .as_ref()
-        .map(|b| b.to_url())
-        .transpose()?;
+    let base_url: Option<Cow<Url>> = base
+        .map(Base::to_url)
+        .transpose()?
+        .map(Cow::Owned)
+        .or(root_dir_url.as_ref().map(Cow::Borrowed));
     // println!("{:?}", apply_base(&raw_uri.text, base.as_ref()));
 
     // println!("{:?}", base.clone().unwrap().join("not rooted"));
@@ -126,61 +123,54 @@ fn try_parse_into_uri(
     // let root_dir = root_dir_url.as_ref().map(Url::as_str);
     //
 
-    let fallback_local_base = |url: &Url, allow_absolute: bool| {
-        let top = path_url.join("/").unwrap();
-        let subpath = top.make_relative(&path_url).unwrap();
-        move || (Cow::Owned(top), Cow::Owned(subpath), allow_absolute)
+    let fallback_local_base = |url: &Url| -> Option<_> {
+        let top = url.join("/").ok()?;
+        let subpath = top.make_relative(&url)?;
+        Some((Cow::Owned(top), Cow::Owned(subpath), url.scheme() != "file"))
     };
 
-    let source_base = source.to_base();
-    let source_url = source_base.as_ref().map(Base::to_url).transpose()?;
+    let source_url = source.to_url()?;
 
-    // println!("{:?}", remote_base.join("/rooted file "));
-    let base_info = source_url.map(|url| match url.strip_prefix(root_dir) {
-        Some(subpath) => (Cow::Borrowed(base), Cow::Owned(subpath), true)
-        None => fallback_local_base(url, true)
-    });
-        InputSource::RemoteUrl(url) => Some((Cow::Borrowed(url.deref()), Cow::Borrowed(""), true)),
-        InputSource::FsPath(path) => match std::path::absolute(path) {
-            Ok(path) => match (&base, &root_dir) {
-                (Some(base), Some(root_dir)) => path.strip_prefix(root_dir).ok().map(|subpath| {
-                    (
-                        Cow::Borrowed(base),
-                        Cow::Owned(subpath.to_string_lossy().into()),
-                        true,
-                    )
-                }),
-                _ => None,
-            }
-            .unwrap_or_else(fallback_local_base(&path)?)
-            .into(),
-            Err(_) => None,
-        },
-        _ => None,
+    let base_info = match &source_url {
+        Some(url) => match (base_url.as_deref(), &root_dir_url) {
+            (Some(base_url), Some(root_dir_url)) => url
+                .strip_prefix(root_dir_url)
+                .map(|subpath| (Cow::Borrowed(base_url), Cow::Owned(subpath), true)),
+            _ => None,
+        }
+        .map_or_else(
+            || fallback_local_base(url).ok_or(ErrorKind::InvalidUrlHost),
+            Ok,
+        )?
+        .into(),
+        None => None,
     };
-    // println!("{} {:?}", &raw_uri.text, &base_info);
+    println!("{} {:?}", &raw_uri.text, &base_info);
+
+    // match Uri::try_from(raw_uri.clone()) {
+    //     Ok(uri) => return Ok(uri),
+    //     _ => (),
+    // };
 
     match base_info {
         Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with("/") => {
-            Url::parse(&raw_uri.text) // this is expected to fail.
+            Err(ParseError::RelativeUrlWithoutBase)
         }
         Some((base, subpath, _)) => {
             apply_base(&base, &subpath, &raw_uri.text).and_then(|url| {
-                match (base.make_relative(&url), &root_dir_url) {
-                    (Some(base_url_subpath), Some(root_dir_url))
-                        if !base_url_subpath.starts_with("..") =>
-                    {
+                match (url.strip_prefix(&base), &root_dir_url) {
+                    (Some(base_url_subpath), Some(root_dir_url)) => {
                         root_dir_url.join(&base_url_subpath)
                     }
                     _ => Ok(url),
                 }
             })
         }
-        None => Url::parse(&raw_uri.text),
+        None => Url::parse(&raw_uri.text)
     }
-    .inspect(|x| println!("-----> {}", x))
-    .map(|url| Uri { url })
+    // .inspect(|x| println!("-----> {}", x))
     .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()))
+    .map(|url| Uri { url })
 
     // TODO: MAP BACK TO local root dir by checking if ads starts with base.
 
