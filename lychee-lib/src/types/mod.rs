@@ -2,6 +2,7 @@
 
 mod accept;
 mod base;
+mod base_info;
 mod basic_auth;
 mod cache;
 mod cookies;
@@ -12,7 +13,6 @@ pub(crate) mod mail;
 mod request;
 pub(crate) mod resolver;
 mod response;
-mod source_base_info;
 mod status;
 mod status_code;
 pub(crate) mod uri;
@@ -27,7 +27,7 @@ pub use file::{FileExtensions, FileType};
 pub use input::{Input, InputContent, InputResolver, InputSource};
 pub use request::Request;
 pub use response::{Response, ResponseBody};
-pub use source_base_info::SourceBaseInfo;
+pub use base_info::SourceBaseInfo;
 pub use status::Status;
 pub use status_code::*;
 
