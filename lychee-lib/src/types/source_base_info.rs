@@ -20,7 +20,7 @@ pub struct SourceBaseInfo {
 impl SourceBaseInfo {
     fn infer_source_base(url: &Url) -> Option<(Url, String, bool)> {
         let origin = url.join("/").ok()?;
-        let subpath = origin.make_relative(&url)?;
+        let subpath = origin.make_relative(url)?;
         Some((origin, subpath, url.scheme() != "file"))
     }
 
@@ -60,8 +60,7 @@ impl SourceBaseInfo {
             .map_or_else(
                 || SourceBaseInfo::infer_source_base(&source_url).ok_or(ErrorKind::InvalidUrlHost),
                 Ok,
-            )?
-            .into();
+            )?;
 
         Ok(Some(Self {
             origin,
@@ -79,12 +78,12 @@ impl SourceBaseInfo {
             remote_local_mappings,
         } = self;
 
-        let is_absolute = raw_uri.text.trim_ascii_start().starts_with("/");
+        let is_absolute = raw_uri.text.trim_ascii_start().starts_with('/');
         if !allow_absolute && is_absolute {
             return Err(ErrorKind::InvalidBaseJoin(raw_uri.text.clone()));
         }
 
-        match apply_rooted_base_url(&origin, &[&subpath, &raw_uri.text]) {
+        match apply_rooted_base_url(origin, &[subpath, &raw_uri.text]) {
             Ok(url) => remote_local_mappings
                 .iter()
                 .find_map(|(remote, local)| {

@@ -20,7 +20,7 @@ pub(crate) fn remove_get_params_and_separate_fragment(url: &str) -> (&str, Optio
     (path, frag)
 }
 
-pub fn apply_rooted_base_url(
+pub(crate) fn apply_rooted_base_url(
     base: &Url,
     subpaths: &[&str],
 ) -> std::result::Result<Url, url::ParseError> {
@@ -52,7 +52,7 @@ pub fn apply_rooted_base_url(
         Some(relative_to_base) => base.join(&relative_to_base),
         None => Ok(url.into_owned()),
     }
-    .inspect(|x| println!("---> {}", x))
+    .inspect(|x| println!("---> {x}"))
 }
 
 // Use `LinkFinder` to offload the raw link searching in plaintext

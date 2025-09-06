@@ -14,7 +14,7 @@
 //!   and filtered by extension
 //! - URLs, raw strings, and standard input (`stdin`) are read directly
 
-use crate::{Base, ErrorKind};
+use crate::ErrorKind;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;

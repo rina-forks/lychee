@@ -2,8 +2,6 @@ use log::warn;
 use percent_encoding::percent_decode_str;
 use reqwest::Url;
 use std::borrow::Cow;
-use std::ops::Deref;
-use std::sync::LazyLock;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -92,7 +90,7 @@ fn try_parse_into_uri(
 
     let infer_source_base = |url: &Url| -> Option<_> {
         let top = url.join("/").ok()?;
-        let subpath = top.make_relative(&url)?;
+        let subpath = top.make_relative(url)?;
         Some((Cow::Owned(top), Cow::Owned(subpath), url.scheme() != "file"))
     };
 
@@ -120,14 +118,14 @@ fn try_parse_into_uri(
     // };
 
     match base_info {
-        Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with("/") => {
+        Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with('/') => {
             Err(ParseError::RelativeUrlWithoutBase)
         }
         Some((base, subpath, _allow_absolute)) => {
             url::apply_rooted_base_url(&base, &[&subpath, &raw_uri.text]).and_then(|url| {
                 match (base_url.as_deref(), &root_dir_url) {
                     (Some(base_url), Some(root_dir_url)) => url
-                        .strip_prefix(&base_url)
+                        .strip_prefix(base_url)
                         .and_then(|subpath| root_dir_url.join(&subpath).ok())
                         .map_or(Ok(url), Ok),
                     _ => Ok(url),
@@ -136,7 +134,7 @@ fn try_parse_into_uri(
         }
         None => Url::parse(&raw_uri.text),
     }
-    .inspect(|x| println!("OUT -----> {}", x))
+    .inspect(|x| println!("OUT -----> {x}"))
     .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()))
     .map(|url| Uri { url })
 
@@ -227,7 +225,7 @@ pub(crate) fn create(
         Ok(base_info) => base_info,
         Err(e) => {
             let source = truncate_source(source);
-            warn!("Error handling source {}: {:?}", source, e);
+            warn!("Error handling source {source}: {e:?}");
             return HashSet::new();
         }
     };

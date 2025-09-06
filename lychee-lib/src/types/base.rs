@@ -52,7 +52,7 @@ impl Base {
                 // We keep the username and password intact
                 Some(Base::Remote(*base_url))
             }
-            InputSource::FsPath(path) => path.to_path_buf().canonicalize().ok().map(Base::Local),
+            InputSource::FsPath(path) => path.clone().canonicalize().ok().map(Base::Local),
             // other inputs do not have a URL to extract a base
             _ => None,
         }
