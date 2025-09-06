@@ -1,6 +1,8 @@
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use linkify::LinkFinder;
+use reqwest::Url;
 
 static LINK_FINDER: LazyLock<LinkFinder> = LazyLock::new(LinkFinder::new);
 
@@ -16,6 +18,41 @@ pub(crate) fn remove_get_params_and_separate_fragment(url: &str) -> (&str, Optio
         None => path,
     };
     (path, frag)
+}
+
+pub fn apply_rooted_base_url(
+    base: &Url,
+    subpaths: &[&str],
+) -> std::result::Result<Url, url::ParseError> {
+    // println!("applying {}, {}, {}", base, subpath, link);
+    // tests:
+    // - .. out of local base should be blocked.
+    // - scheme-relative urls should work and not spuriously trigger base url
+    // - fully-qualified urls should work
+    // - slash should work to go to local base, if specified
+    // - slash should be forbidden for inferred base urls.
+    // - percent encoding ;-;
+    // - trailing slashes in base-url and/or root-dir
+    // - fragments and query params, on both http and file
+    let fake_base = match base.scheme() {
+        "file" => {
+            let mut fake_base = base.join("/")?;
+            fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
+            Some(fake_base)
+        }
+        _ => None,
+    };
+
+    let mut url = Cow::Borrowed(fake_base.as_ref().unwrap_or(base));
+    for subpath in subpaths {
+        url = Cow::Owned(url.join(subpath)?);
+    }
+
+    match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
+        Some(relative_to_base) => base.join(&relative_to_base),
+        None => Ok(url.into_owned()),
+    }
+    .inspect(|x| println!("---> {}", x))
 }
 
 // Use `LinkFinder` to offload the raw link searching in plaintext

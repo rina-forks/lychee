@@ -9,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::types::SourceBaseInfo;
 use crate::{
     Base, BasicAuthCredentials, ErrorKind, Request, Result, Uri,
     basic_auth::BasicAuthExtractor,
@@ -29,50 +30,19 @@ pub(crate) fn extract_credentials(
 fn create_request(
     raw_uri: &RawUri,
     source: &InputSource,
-    root_dir: Option<&Path>,
-    base: Option<&Base>,
+    base_info: Option<&SourceBaseInfo>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Result<Request> {
-    let uri = try_parse_into_uri(raw_uri, source, root_dir, base)?;
+    let uri = Uri::try_from(raw_uri.clone()).or_else(|e| match base_info {
+        Some(base_info) => base_info.parse_uri(raw_uri),
+        None => Err(e), // TODO: more precise error kind?
+    })?;
     let source = truncate_source(source);
     let element = raw_uri.element.clone();
     let attribute = raw_uri.attribute.clone();
     let credentials = extract_credentials(extractor, &uri);
 
     Ok(Request::new(uri, source, element, attribute, credentials))
-}
-
-fn apply_base(base: &Url, subpath: &str, link: &str) -> std::result::Result<Url, ParseError> {
-    // println!("applying {}, {}, {}", base, subpath, link);
-    // tests:
-    // - .. out of local base should be blocked.
-    // - scheme-relative urls should work and not spuriously trigger base url
-    // - fully-qualified urls should work
-    // - slash should work to go to local base, if specified
-    // - slash should be forbidden for inferred base urls.
-    // - percent encoding ;-;
-    // - trailing slashes in base-url and/or root-dir
-    // - fragments and query params, on both http and file
-    let fake_base = match base.scheme() {
-        "file" => {
-            let mut fake_base = base.join("/")?;
-            fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
-            Some(fake_base)
-        }
-        _ => None,
-    };
-
-    let url = fake_base
-        .as_ref()
-        .unwrap_or(base)
-        .join(subpath)?
-        .join(link)?;
-
-    match fake_base.and_then(|b| b.make_relative(&url)) {
-        Some(relative_to_base) => base.join(&relative_to_base),
-        None => Ok(url),
-    }
-    .inspect(|x| println!("---> {}", x))
 }
 
 /// Try to parse the raw URI into a `Uri`.
@@ -153,14 +123,17 @@ fn try_parse_into_uri(
         Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with("/") => {
             Err(ParseError::RelativeUrlWithoutBase)
         }
-        Some((base, subpath, _allow_absolute)) => apply_base(&base, &subpath, &raw_uri.text)
-            .and_then(|url| match (base_url.as_deref(), &root_dir_url) {
-                (Some(base_url), Some(root_dir_url)) => url
-                    .strip_prefix(&base_url)
-                    .and_then(|subpath| root_dir_url.join(&subpath).ok())
-                    .map_or(Ok(url), Ok),
-                _ => Ok(url),
-            }),
+        Some((base, subpath, _allow_absolute)) => {
+            url::apply_rooted_base_url(&base, &[&subpath, &raw_uri.text]).and_then(|url| {
+                match (base_url.as_deref(), &root_dir_url) {
+                    (Some(base_url), Some(root_dir_url)) => url
+                        .strip_prefix(&base_url)
+                        .and_then(|subpath| root_dir_url.join(&subpath).ok())
+                        .map_or(Ok(url), Ok),
+                    _ => Ok(url),
+                }
+            })
+        }
         None => Url::parse(&raw_uri.text),
     }
     .inspect(|x| println!("OUT -----> {}", x))
@@ -250,16 +223,25 @@ pub(crate) fn create(
     base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> HashSet<Request> {
+    let base_info = match SourceBaseInfo::from_source(source, root_dir, base) {
+        Ok(base_info) => base_info,
+        Err(e) => {
+            let source = truncate_source(source);
+            warn!("Error handling source {}: {:?}", source, e);
+            return HashSet::new();
+        }
+    };
+
     uris.into_iter()
-        .filter_map(
-            |raw_uri| match create_request(&raw_uri, source, root_dir, base, extractor) {
+        .filter_map(|raw_uri| {
+            match create_request(&raw_uri, source, base_info.as_ref(), extractor) {
                 Ok(request) => Some(request),
                 Err(e) => {
                     warn!("Error creating request: {e:?}");
                     None
                 }
-            },
-        )
+            }
+        })
         .collect()
 }
 
