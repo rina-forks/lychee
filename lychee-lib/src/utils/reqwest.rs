@@ -1,19 +1,5 @@
 use std::error::Error;
 
-pub(crate) trait ReqwestUrlExt {
-    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String>;
-}
-
-impl ReqwestUrlExt for reqwest::Url {
-    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String> {
-        prefix
-            .make_relative(self)
-            .filter(|subpath| !subpath.starts_with("../"))
-        // .inspect(|x| println!("subpathing {}", x))
-        // .filter(|_| prefix.as_str().starts_with(self.as_str()))
-    }
-}
-
 /// A rule for matching error message patterns to human-readable messages
 struct ErrorRule {
     patterns: &'static [&'static str],

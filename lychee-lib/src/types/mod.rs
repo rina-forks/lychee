@@ -19,6 +19,7 @@ pub(crate) mod uri;
 
 pub use accept::*;
 pub use base::Base;
+pub use base_info::SourceBaseInfo;
 pub use basic_auth::{BasicAuthCredentials, BasicAuthSelector};
 pub use cache::CacheStatus;
 pub use cookies::CookieJar;
@@ -27,7 +28,6 @@ pub use file::{FileExtensions, FileType};
 pub use input::{Input, InputContent, InputResolver, InputSource};
 pub use request::Request;
 pub use response::{Response, ResponseBody};
-pub use base_info::SourceBaseInfo;
 pub use status::Status;
 pub use status_code::*;
 

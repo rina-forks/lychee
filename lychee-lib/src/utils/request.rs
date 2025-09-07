@@ -12,7 +12,7 @@ use crate::{
     Base, BasicAuthCredentials, ErrorKind, Request, Result, Uri,
     basic_auth::BasicAuthExtractor,
     types::{InputSource, uri::raw::RawUri},
-    utils::{path, reqwest::ReqwestUrlExt, url},
+    utils::{path, url, url::ReqwestUrlExt},
 };
 use ::url::ParseError;
 
@@ -28,13 +28,10 @@ pub(crate) fn extract_credentials(
 fn create_request(
     raw_uri: &RawUri,
     source: &InputSource,
-    base_info: Option<&SourceBaseInfo>,
+    base_info: &SourceBaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Result<Request> {
-    let uri = Uri::try_from(raw_uri.clone()).or_else(|e| match base_info {
-        Some(base_info) => base_info.parse_uri(raw_uri),
-        None => Err(e), // TODO: more precise error kind?
-    })?;
+    let uri = base_info.parse_uri(raw_uri)?;
     let source = truncate_source(source);
     let element = raw_uri.element.clone();
     let attribute = raw_uri.attribute.clone();
@@ -121,17 +118,15 @@ fn try_parse_into_uri(
         Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with('/') => {
             Err(ParseError::RelativeUrlWithoutBase)
         }
-        Some((base, subpath, _allow_absolute)) => {
-            url::apply_rooted_base_url(&base, &[&subpath, &raw_uri.text]).and_then(|url| {
-                match (base_url.as_deref(), &root_dir_url) {
-                    (Some(base_url), Some(root_dir_url)) => url
-                        .strip_prefix(base_url)
-                        .and_then(|subpath| root_dir_url.join(&subpath).ok())
-                        .map_or(Ok(url), Ok),
-                    _ => Ok(url),
-                }
-            })
-        }
+        Some((base, subpath, _allow_absolute)) => base
+            .join_rooted(&[&subpath, &raw_uri.text])
+            .and_then(|url| match (base_url.as_deref(), &root_dir_url) {
+                (Some(base_url), Some(root_dir_url)) => url
+                    .strip_prefix(base_url)
+                    .and_then(|subpath| root_dir_url.join(&subpath).ok())
+                    .map_or(Ok(url), Ok),
+                _ => Ok(url),
+            }),
         None => Url::parse(&raw_uri.text),
     }
     .inspect(|x| println!("OUT -----> {x}"))
@@ -231,15 +226,15 @@ pub(crate) fn create(
     };
 
     uris.into_iter()
-        .filter_map(|raw_uri| {
-            match create_request(&raw_uri, source, base_info.as_ref(), extractor) {
+        .filter_map(
+            |raw_uri| match create_request(&raw_uri, source, &base_info, extractor) {
                 Ok(request) => Some(request),
                 Err(e) => {
                     warn!("Error creating request: {e:?}");
                     None
                 }
-            }
-        })
+            },
+        )
         .collect()
 }
 

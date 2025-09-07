@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 
 use linkify::LinkFinder;
 use reqwest::Url;
+use url::ParseError;
 
 static LINK_FINDER: LazyLock<LinkFinder> = LazyLock::new(LinkFinder::new);
 
@@ -20,44 +21,58 @@ pub(crate) fn remove_get_params_and_separate_fragment(url: &str) -> (&str, Optio
     (path, frag)
 }
 
-pub(crate) fn apply_rooted_base_url(
-    base: &Url,
-    subpaths: &[&str],
-) -> std::result::Result<Url, url::ParseError> {
-    // println!("applying {}, {}, {}", base, subpath, link);
-    // tests:
-    // - .. out of local base should be blocked.
-    // - scheme-relative urls should work and not spuriously trigger base url
-    // - fully-qualified urls should work
-    // - slash should work to go to local base, if specified
-    // - slash should be forbidden for inferred base urls.
-    // - percent encoding ;-;
-    // - trailing slashes in base-url and/or root-dir
-    // - fragments and query params, on both http and file
-    let fake_base = match base.scheme() {
-        "file" => {
-            let mut fake_base = base.join("/")?;
-            fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
-            Some(fake_base)
-        }
-        _ => None,
-    };
-
-    let mut url = Cow::Borrowed(fake_base.as_ref().unwrap_or(base));
-    for subpath in subpaths {
-        url = Cow::Owned(url.join(subpath)?);
-    }
-
-    match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
-        Some(relative_to_base) => base.join(&relative_to_base),
-        None => Ok(url.into_owned()),
-    }
-    .inspect(|x| println!("---> {x}"))
-}
-
 // Use `LinkFinder` to offload the raw link searching in plaintext
 pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>> {
     LINK_FINDER.links(input)
+}
+
+pub(crate) trait ReqwestUrlExt {
+    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String>;
+    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
+}
+
+impl ReqwestUrlExt for reqwest::Url {
+    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String> {
+        prefix
+            .make_relative(self)
+            .filter(|subpath| !subpath.starts_with("../"))
+        // .inspect(|x| println!("subpathing {}", x))
+        // .filter(|_| prefix.as_str().starts_with(self.as_str()))
+    }
+
+    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError> {
+        let base = self;
+        // println!("applying {}, {}, {}", base, subpath, link);
+        // tests:
+        // - .. out of local base should be blocked.
+        // - scheme-relative urls should work and not spuriously trigger base url
+        // - fully-qualified urls should work
+        // - slash should work to go to local base, if specified
+        // - slash should be forbidden for inferred base urls.
+        // - percent encoding ;-;
+        // - trailing slashes in base-url and/or root-dir
+        // - fragments and query params, on both http and file
+        // - windows file paths ;-;
+        let fake_base = match base.scheme() {
+            "file" => {
+                let mut fake_base = base.join("/")?;
+                fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
+                Some(fake_base)
+            }
+            _ => None,
+        };
+
+        let mut url = Cow::Borrowed(fake_base.as_ref().unwrap_or(base));
+        for subpath in subpaths {
+            url = Cow::Owned(url.join(subpath)?);
+        }
+
+        match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
+            Some(relative_to_base) => base.join(&relative_to_base),
+            None => Ok(url.into_owned()),
+        }
+        .inspect(|x| println!("---> {x}"))
+    }
 }
 
 #[cfg(test)]
