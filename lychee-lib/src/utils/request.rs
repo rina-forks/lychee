@@ -40,114 +40,16 @@ fn create_request(
     Ok(Request::new(uri, source, element, attribute, credentials))
 }
 
-/// Try to parse the raw URI into a `Uri`.
-///
-/// If the raw URI is not a valid URI, create a URI by joining the base URL with the text.
-/// If the base URL is not available, create a URI from the file path.
-///
-/// # Errors
-///
-/// - If the text (the unparsed URI represented as a `String`) cannot be joined with the base
-///   to create a valid URI.
-/// - If a URI cannot be created from the file path.
-/// - If the source is not a file path (i.e. the URI type is not supported).
+/// Shim to [`SourceBaseInfo`] for testing. This function is no longer
+/// used by the main execution.
 fn try_parse_into_uri(
     raw_uri: &RawUri,
     source: &InputSource,
     root_dir: Option<&Path>,
     base: Option<&Base>,
 ) -> Result<Uri> {
-    let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
-
-    let root_dir_url = root_dir
-        .map(|path| Base::Local(path.to_owned()).to_url())
-        .transpose()?;
-
-    // println!("{:?}", base.clone());
-    let base_url: Option<Cow<Url>> = base
-        .map(Base::to_url)
-        .transpose()?
-        .map(Cow::Owned)
-        .or(root_dir_url.as_ref().map(Cow::Borrowed));
-    // println!("{:?}", apply_base(&raw_uri.text, base.as_ref()));
-
-    // println!("{:?}", base.clone().unwrap().join("not rooted"));
-    // println!("{:?}", base.clone().unwrap().join("/rooted"));
-
-    // 1. graft input source - if source is a FsPath subdirectory of root_dir,
-    //    replace InputSource with RemoteUrl.
-
-    // 2. map root_dir to base.
-
-    // let root_dir_url = root_dir
-    //     .map(Path::to_string_lossy)
-    //     .map(|x| Url::from_file_path(&*x).expect("file path to url failed?!"));
-    // let root_dir = root_dir_url.as_ref().map(Url::as_str);
-    //
-
-    let infer_source_base = |url: &Url| -> Option<_> {
-        let top = url.join("/").ok()?;
-        let subpath = top.make_relative(url)?;
-        Some((Cow::Owned(top), Cow::Owned(subpath), url.scheme() != "file"))
-    };
-
-    let source_url = source.to_url()?;
-
-    let base_info = match &source_url {
-        Some(source_url) => match (base_url.as_deref(), &root_dir_url) {
-            (Some(base_url), Some(root_dir_url)) => source_url
-                .strip_prefix(root_dir_url)
-                .map(|subpath| (Cow::Borrowed(base_url), Cow::Owned(subpath), true)),
-            _ => None,
-        }
-        .map_or_else(
-            || infer_source_base(source_url).ok_or(ErrorKind::InvalidUrlHost),
-            Ok,
-        )?
-        .into(),
-        None => None,
-    };
-    println!("{} {:?}", &raw_uri.text, &base_info);
-
-    // match Uri::try_from(raw_uri.clone()) {
-    //     Ok(uri) => return Ok(uri),
-    //     _ => (),
-    // };
-
-    match base_info {
-        Some((_, _, false)) if raw_uri.text.trim_ascii_start().starts_with('/') => {
-            Err(ParseError::RelativeUrlWithoutBase)
-        }
-        Some((base, subpath, _allow_absolute)) => base
-            .join_rooted(&[&subpath, &raw_uri.text])
-            .and_then(|url| match (base_url.as_deref(), &root_dir_url) {
-                (Some(base_url), Some(root_dir_url)) => url
-                    .strip_prefix(base_url)
-                    .and_then(|subpath| root_dir_url.join(&subpath).ok())
-                    .map_or(Ok(url), Ok),
-                _ => Ok(url),
-            }),
-        None => Url::parse(&raw_uri.text),
-    }
-    .inspect(|x| println!("OUT -----> {x}"))
-    .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()))
-    .map(|url| Uri { url })
-
-    // TODO: MAP BACK TO local root dir by checking if ads starts with base.
-
-    // let uri = match Uri::try_from(raw_uri.clone()) {
-    //     Ok(uri) => uri,
-    //     Err(_) => match base {
-    //         Some(base_url) => match base_url.join(&text) {
-    //             Some(url) => Uri { url },
-    //             None => return Err(ErrorKind::InvalidBaseJoin(text.clone())),
-    //         },
-    //         None => panic!("no base :((((("),
-    //     },
-    // };
-    // println!(" = {uri:?}");
-
-    // let base = base.and_then(Base::to_url);
+    let base_info = SourceBaseInfo::from_source(source, root_dir, base)?;
+    base_info.parse_uri(raw_uri)
 }
 
 // Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
@@ -568,15 +470,10 @@ mod tests {
     fn test_create_request_from_relative_file_path() {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
         let input_source = InputSource::FsPath(PathBuf::from("page.html"));
+        let base_info = SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
 
-        let actual = create_request(
-            &RawUri::from("file.html"),
-            &input_source,
-            None,
-            Some(&base),
-            None,
-        )
-        .unwrap();
+        let actual =
+            create_request(&RawUri::from("file.html"), &input_source, &base_info, None).unwrap();
 
         assert_eq!(
             actual,
@@ -596,13 +493,13 @@ mod tests {
     fn test_create_request_from_absolute_file_path() {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
         let input_source = InputSource::FsPath(PathBuf::from("/tmp/lychee/page.html"));
+        let base_info = SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
 
         // Use an absolute path that's outside the base directory
         let actual = create_request(
             &RawUri::from("/usr/local/share/doc/example.html"),
             &input_source,
-            None,
-            Some(&base),
+            &base_info,
             None,
         )
         .unwrap();
