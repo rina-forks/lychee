@@ -21,6 +21,8 @@ impl SourceBaseInfo {
         base: Option<(Url, String, bool)>,
         remote_local_mappings: Vec<(Url, Url)>,
     ) -> Result<SourceBaseInfo, ErrorKind> {
+        // TODO: check no repeated bases/roots on the same side.
+        // TODO: choose longest match if multiple could apply
         let conflicting_mapping = remote_local_mappings.iter().find(|(remote, local)| {
             if remote == local {
                 false
@@ -75,10 +77,10 @@ impl SourceBaseInfo {
         };
 
         let fallback_base_url = fallback_base.map(Base::to_url).transpose()?;
-        let fallback_base_result = fallback_base_url.map(|url| (url, String::new(), true));
+        let fallback_base_option = fallback_base_url.map(|url| (url, String::new(), true));
 
         let Some(source_url) = source_url else {
-            return Self::new(fallback_base_result, remote_local_mappings);
+            return Self::new(fallback_base_option, remote_local_mappings);
         };
 
         let base = remote_local_mappings
@@ -89,9 +91,10 @@ impl SourceBaseInfo {
                     .map(|subpath| (remote.clone(), subpath, true))
             })
             .map_or_else(
-                || match fallback_base_result {
-                    Some(fallback) => Ok(fallback),
-                    None => Self::infer_default_base(&source_url),
+                || match Self::infer_default_base(&source_url) {
+                    ok @ Ok((_, _, _allow_absolute @ false)) => fallback_base_option.map_or(ok, Ok),
+                    Ok(x) => Ok(x),
+                    Err(e) => fallback_base_option.ok_or(e),
                 },
                 Ok,
             )?;
