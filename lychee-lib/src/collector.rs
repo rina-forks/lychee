@@ -428,7 +428,7 @@ mod tests {
             }),
         ]);
 
-        let collector = Collector::new(Some(temp_dir_path.to_path_buf()), None)?;
+        let collector = Collector::new(Some(temp_dir_path.to_path_buf()), None, None)?;
 
         let sources: Vec<_> = collector.collect_sources(inputs).collect().await;
 

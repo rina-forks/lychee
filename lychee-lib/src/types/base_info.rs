@@ -156,7 +156,8 @@ mod tests {
         let root_dir = PathBuf::from("/some");
         let base = Base::try_from("https://example.com/path/page2.html").unwrap();
         let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
-        let base_info = SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base)).unwrap();
+        let base_info =
+            SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base), None).unwrap();
 
         assert_eq!(
             base_info
@@ -172,7 +173,8 @@ mod tests {
         let root_dir = PathBuf::from("/some/pagex.html");
         let base = Base::try_from("https://example.com/path/page.html").unwrap();
         let source = InputSource::FsPath(PathBuf::from("/some/pagex.html"));
-        let base_info = SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base)).unwrap();
+        let base_info =
+            SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base), None).unwrap();
 
         assert_eq!(
             base_info
