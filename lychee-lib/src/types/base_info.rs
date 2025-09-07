@@ -89,14 +89,9 @@ impl SourceBaseInfo {
     }
 
     pub fn parse_uri(&self, raw_uri: &RawUri) -> Result<Uri, ErrorKind> {
-        let Self {
-            base,
-            remote_local_mappings,
-        } = self;
-
         let is_absolute = || raw_uri.text.trim_ascii_start().starts_with('/');
 
-        let Uri { url } = Uri::try_from(raw_uri.clone()).or_else(|e| match base {
+        let Uri { url } = Uri::try_from(raw_uri.clone()).or_else(|e| match &self.base {
             Some((_, _, _allow_absolute @ false)) if is_absolute() => {
                 Err(ErrorKind::InvalidBaseJoin(raw_uri.text.clone()))
             }
@@ -107,7 +102,8 @@ impl SourceBaseInfo {
             None => Err(e),
         })?;
 
-        let url = remote_local_mappings
+        let url = self
+            .remote_local_mappings
             .iter()
             .find_map(|(remote, local)| {
                 url.strip_prefix(remote)
