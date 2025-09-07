@@ -1,5 +1,6 @@
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::{convert::TryFrom, path::PathBuf};
 
 use crate::{ErrorKind, InputSource};
@@ -81,6 +82,15 @@ impl TryFrom<String> for Base {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::try_from(value.as_str())
+    }
+}
+
+impl fmt::Display for Base {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Local(path) => write!(f, "{}", path.display()),
+            Self::Remote(url) => write!(f, "{}", url),
+        }
     }
 }
 

@@ -83,8 +83,8 @@ impl Collector {
         let root_and_base = match (root_dir, base) {
             (None, Some(base)) => {
                 return Err(ErrorKind::InvalidBase(
-                    format!("{base:?}"),
-                    "base cannot be specified without root dir".to_string(),
+                    base.to_string(),
+                    "base must be specified alongside root dir, but root dir is unset".to_string(),
                 ));
             }
             (None, None) => None,
