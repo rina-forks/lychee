@@ -31,8 +31,7 @@ pub struct Collector {
     include_verbatim: bool,
     include_wikilinks: bool,
     use_html5ever: bool,
-    root_dir: Option<PathBuf>,
-    base: Option<Base>,
+    root_and_base: Option<(PathBuf, Option<Base>)>,
     fallback_base: Option<Base>,
     excluded_paths: PathExcludes,
     headers: HeaderMap,
@@ -55,8 +54,7 @@ impl Default for Collector {
             use_html5ever: false,
             skip_hidden: true,
             skip_ignored: true,
-            root_dir: None,
-            base: None,
+            root_and_base: None,
             fallback_base: None,
             headers: HeaderMap::new(),
             client: Client::new(),
@@ -82,6 +80,17 @@ impl Collector {
                 return Err(ErrorKind::RootDirMustBeAbsolute(root_dir.clone()));
             }
         }
+        let root_and_base = match (root_dir, base) {
+            (None, Some(base)) => {
+                return Err(ErrorKind::InvalidBase(
+                    format!("{base:?}"),
+                    "base cannot be specified without root dir".to_string(),
+                ));
+            }
+            (None, None) => None,
+            (Some(root_dir), base) => Some((root_dir, base)),
+        };
+
         Ok(Collector {
             basic_auth_extractor: None,
             skip_missing_inputs: false,
@@ -95,8 +104,7 @@ impl Collector {
                 .build()
                 .map_err(ErrorKind::BuildRequestClient)?,
             excluded_paths: PathExcludes::empty(),
-            root_dir,
-            base,
+            root_and_base,
             fallback_base,
         })
     }
@@ -249,7 +257,6 @@ impl Collector {
         let skip_missing_inputs = self.skip_missing_inputs;
         let skip_hidden = self.skip_hidden;
         let skip_ignored = self.skip_ignored;
-        let global_base = self.base;
         let excluded_paths = self.excluded_paths;
 
         let resolver = UrlContentResolver {
@@ -266,32 +273,24 @@ impl Collector {
 
         stream::iter(inputs)
             .par_then_unordered(None, move |input| {
-                let default_base = global_base.clone();
                 let extensions = extensions.clone();
                 let resolver = resolver.clone();
                 let excluded_paths = excluded_paths.clone();
 
                 async move {
-                    let base = match &input.source {
-                        InputSource::RemoteUrl(url) => Base::try_from(url.as_str()).ok(),
-                        _ => default_base,
-                    };
-
-                    input
-                        .get_contents(
-                            skip_missing_inputs,
-                            skip_hidden,
-                            skip_ignored,
-                            extensions,
-                            resolver,
-                            excluded_paths,
-                        )
-                        .map(move |content| (content, base.clone()))
+                    input.get_contents(
+                        skip_missing_inputs,
+                        skip_hidden,
+                        skip_ignored,
+                        extensions,
+                        resolver,
+                        excluded_paths,
+                    )
                 }
             })
             .flatten()
-            .par_then_unordered(None, move |(content, base)| {
-                let root_dir = self.root_dir.clone();
+            .par_then_unordered(None, move |content| {
+                let root_and_base = self.root_and_base.clone();
                 let fallback_base = self.fallback_base.clone();
                 let basic_auth_extractor = self.basic_auth_extractor.clone();
                 async move {
@@ -300,8 +299,9 @@ impl Collector {
                     let requests = request::create(
                         uris,
                         &content.source,
-                        root_dir.as_deref(),
-                        base.as_ref(),
+                        root_and_base
+                            .as_ref()
+                            .map(|(x, y)| (x.as_ref(), y.as_ref())),
                         fallback_base.as_ref(),
                         basic_auth_extractor.as_ref(),
                     );

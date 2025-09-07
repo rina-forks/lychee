@@ -55,32 +55,33 @@ impl SourceBaseInfo {
 
     pub fn from_source(
         source: &InputSource,
-        root_dir: Option<&Path>,
-        base: Option<&Base>,
+        root_and_base: Option<(&Path, Option<&Base>)>,
         fallback_base: Option<&Base>,
     ) -> Result<SourceBaseInfo, ErrorKind> {
-        let root_dir_url = root_dir
-            .map(|path| Base::Local(path.to_owned()).to_url())
-            .transpose()?;
-
-        // println!("{:?}", base.clone());
-        let base_url: Option<Url> = base
-            .map(Base::to_url)
-            .transpose()?
-            .or_else(|| root_dir_url.clone());
+        let root_and_base: Option<(Url, Url)> = match root_and_base {
+            Some((root, Some(base))) => Some((root, base.clone())),
+            Some((root, None)) => Some((root, Base::Local(root.to_owned()))),
+            None => None,
+        }
+        .map(|(root, base)| -> Result<_, ErrorKind> {
+            let root_url = Base::Local(root.to_owned()).to_url()?;
+            Ok((root_url, base.to_url()?))
+        })
+        .transpose()?;
 
         let source_url = source.to_url()?;
 
-        let remote_local_mappings = match (base_url, root_dir_url) {
-            (Some(base_url), Some(root_dir_url)) => vec![(base_url, root_dir_url)],
+        let remote_local_mappings = match root_and_base {
+            Some((root_dir_url, base_url)) => vec![(base_url, root_dir_url)],
             _ => vec![],
         };
 
         let fallback_base_url = fallback_base.map(Base::to_url).transpose()?;
-        let fallback_base_option = fallback_base_url.map(|url| (url, String::new(), true));
+        let fallback_base_option =
+            move || fallback_base_url.map(|url| (url.clone(), String::new(), true));
 
         let Some(source_url) = source_url else {
-            return Self::new(fallback_base_option, remote_local_mappings);
+            return Self::new(fallback_base_option(), remote_local_mappings);
         };
 
         let base = remote_local_mappings
@@ -92,9 +93,11 @@ impl SourceBaseInfo {
             })
             .map_or_else(
                 || match Self::infer_default_base(&source_url) {
-                    ok @ Ok((_, _, _allow_absolute @ false)) => fallback_base_option.map_or(ok, Ok),
+                    ok @ Ok((_, _, _allow_absolute @ false)) => {
+                        fallback_base_option().map_or(ok, Ok)
+                    }
                     Ok(x) => Ok(x),
-                    Err(e) => fallback_base_option.ok_or(e),
+                    Err(e) => fallback_base_option().ok_or(e),
                 },
                 Ok,
             )?;
@@ -150,7 +153,7 @@ mod tests {
         let base = Base::try_from("https://example.com/path/page2.html").unwrap();
         let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
         let base_info =
-            SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base), None).unwrap();
+            SourceBaseInfo::from_source(&source, Some((&root_dir, Some(&base))), None).unwrap();
 
         assert_eq!(
             base_info
@@ -167,7 +170,7 @@ mod tests {
         let base = Base::try_from("https://example.com/path/page.html").unwrap();
         let source = InputSource::FsPath(PathBuf::from("/some/pagex.html"));
         let base_info =
-            SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base), None).unwrap();
+            SourceBaseInfo::from_source(&source, Some((&root_dir, Some(&base))), None).unwrap();
 
         assert_eq!(
             base_info
