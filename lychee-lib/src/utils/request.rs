@@ -430,14 +430,14 @@ mod tests {
         assert!(
             requests
                 .iter()
-                .any(|r| r.uri.url.as_str() == "https://example.com/parent")
+                .any(|r| r.uri.url.as_str() == "file:///parent")
         );
     }
 
     #[test]
     fn test_fragment_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/some");
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = Base::try_from("https://example.com/path/").unwrap();
         let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![RawUri::from("#fragment")];
@@ -447,7 +447,7 @@ mod tests {
         assert!(
             requests
                 .iter()
-                .any(|r| r.uri.url.as_str() == "/some/page.html#fragment")
+                .any(|r| r.uri.url.as_str() == "file:///some/page.html#fragment")
         );
     }
 

@@ -75,7 +75,7 @@ impl SourceBaseInfo {
                 let (origin, subpath, _) = Self::infer_default_base(base_url)?;
                 return Self::new(Some((origin, subpath, true)), vec![]);
             }
-            _ => ()
+            _ => (),
         }
 
         let remote_local_mappings = match (base_url, root_dir_url) {
@@ -113,6 +113,8 @@ impl SourceBaseInfo {
             None => Err(e),
         })?;
 
+        // println!("before mappings: {}", url.as_str());
+
         let mut url = self
             .remote_local_mappings
             .iter()
@@ -124,9 +126,50 @@ impl SourceBaseInfo {
 
         // BACKWARDS COMPAT: delete trailing slash for file urls
         if url.scheme() == "file" {
-            let _ = url.path_segments_mut().as_mut().map(PathSegmentsMut::pop_if_empty);
+            let _ = url
+                .path_segments_mut()
+                .as_mut()
+                .map(PathSegmentsMut::pop_if_empty);
         }
 
         Ok(Uri { url })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_base_with_filename() {
+        let root_dir = PathBuf::from("/some");
+        let base = Base::try_from("https://example.com/path/page2.html").unwrap();
+        let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
+        let base_info = SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base)).unwrap();
+
+        assert_eq!(
+            base_info
+                .parse_uri(&RawUri::from("#fragment"))
+                .as_ref()
+                .map(|x| x.url.as_str()),
+            Ok("file:///some/page.html#fragment")
+        );
+    }
+
+    #[test]
+    fn test_base_with_same_filename() {
+        let root_dir = PathBuf::from("/some/pagex.html");
+        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let source = InputSource::FsPath(PathBuf::from("/some/pagex.html"));
+        let base_info = SourceBaseInfo::from_source(&source, Some(&root_dir), Some(&base)).unwrap();
+
+        assert_eq!(
+            base_info
+                .parse_uri(&RawUri::from("#fragment"))
+                .as_ref()
+                .map(|x| x.url.as_str()),
+            Ok("file:///some/pagex.html#fragment")
+        );
     }
 }
