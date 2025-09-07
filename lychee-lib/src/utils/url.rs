@@ -35,7 +35,7 @@ impl ReqwestUrlExt for Url {
     fn strip_prefix(&self, prefix: &Url) -> Option<String> {
         prefix
             .make_relative(self)
-            .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with("/"))
+            .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with('/'))
         // .inspect(|x| println!("subpathing {}", x))
         // .filter(|_| prefix.as_str().starts_with(self.as_str()))
     }

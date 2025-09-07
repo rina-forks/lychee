@@ -67,25 +67,15 @@ impl SourceBaseInfo {
             .transpose()?
             .or_else(|| root_dir_url.clone());
 
-        let fallback_base_url = fallback_base.map(Base::to_url).transpose()?;
-        let fallback_base_result = fallback_base_url.map(|url| (url, String::new(), true));
-
         let source_url = source.to_url()?;
-
-        // BACKWARDS COMPAT: if /only/ base-url is given, then apply it
-        // indiscriminately to all inputs, regardless of source, and apply no mappings.
-        match (&base_url, &root_dir_url) {
-            (Some(base_url), None) => {
-                let (origin, subpath, _) = Self::infer_default_base(base_url)?;
-                return Self::new(Some((origin, subpath, true)), vec![]);
-            }
-            _ => (),
-        }
 
         let remote_local_mappings = match (base_url, root_dir_url) {
             (Some(base_url), Some(root_dir_url)) => vec![(base_url, root_dir_url)],
             _ => vec![],
         };
+
+        let fallback_base_url = fallback_base.map(Base::to_url).transpose()?;
+        let fallback_base_result = fallback_base_url.map(|url| (url, String::new(), true));
 
         let Some(source_url) = source_url else {
             return Self::new(fallback_base_result, remote_local_mappings);
