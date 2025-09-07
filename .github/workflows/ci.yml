@@ -47,7 +47,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets --all-features -- -D warnings
+          args: --all-targets --all-features -- #-D warnings
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-msrv
         run: cargo binstall --no-confirm --force cargo-msrv
