@@ -476,8 +476,7 @@ mod tests {
     fn test_create_request_from_relative_file_path() {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
         let input_source = InputSource::FsPath(PathBuf::from("page.html"));
-        let base_info =
-            SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
+        let base_info = SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
 
         let actual =
             create_request(&RawUri::from("file.html"), &input_source, &base_info, None).unwrap();
@@ -500,8 +499,7 @@ mod tests {
     fn test_create_request_from_absolute_file_path() {
         let base = Base::Local(PathBuf::from("/"));
         let input_source = InputSource::FsPath(PathBuf::from("/tmp/lychee/page.html"));
-        let base_info =
-            SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
+        let base_info = SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
 
         // Use an absolute path that's outside the base directory
         let actual = create_request(
