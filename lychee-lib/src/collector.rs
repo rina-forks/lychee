@@ -71,25 +71,14 @@ impl Collector {
     /// Returns an `Err` if the `root_dir` is not an absolute path
     /// or if the reqwest `Client` fails to build
     pub fn new(
-        root_dir: Option<PathBuf>,
-        base: Option<Base>,
+        root_and_base: Option<(PathBuf, Option<Base>)>,
         fallback_base: Option<Base>,
     ) -> Result<Self> {
-        if let Some(root_dir) = &root_dir {
+        if let Some((root_dir, _)) = &root_and_base {
             if root_dir.is_relative() {
                 return Err(ErrorKind::RootDirMustBeAbsolute(root_dir.clone()));
             }
         }
-        let root_and_base = match (root_dir, base) {
-            (None, Some(base)) => {
-                return Err(ErrorKind::InvalidBase(
-                    base.to_string(),
-                    "base must be specified alongside root dir, but root dir is unset".to_string(),
-                ));
-            }
-            (None, None) => None,
-            (Some(root_dir), base) => Some((root_dir, base)),
-        };
 
         Ok(Collector {
             basic_auth_extractor: None,
@@ -336,7 +325,8 @@ mod tests {
     ) -> Result<HashSet<Uri>> {
         // NOTE: base is passed as fallback_base because these tests are written
         // to test the old behaviour.
-        let responses = Collector::new(root_dir, None, fallback_base)?.collect_links(inputs);
+        let responses =
+            Collector::new(root_dir.map(|x| (x, None)), fallback_base)?.collect_links(inputs);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
     }
 
@@ -350,7 +340,7 @@ mod tests {
         base: Option<Base>,
         extensions: FileExtensions,
     ) -> Result<HashSet<Uri>> {
-        let responses = Collector::new(root_dir, base, None)?
+        let responses = Collector::new(root_dir.map(|x| (x, base)), None)?
             .include_verbatim(true)
             .collect_links_from_file_types(inputs, extensions);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
@@ -430,7 +420,7 @@ mod tests {
             }),
         ]);
 
-        let collector = Collector::new(Some(temp_dir_path.to_path_buf()), None, None)?;
+        let collector = Collector::new(Some((temp_dir_path.to_path_buf(), None)), None)?;
 
         let sources: Vec<_> = collector.collect_sources(inputs).collect().await;
 

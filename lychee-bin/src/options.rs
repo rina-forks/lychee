@@ -658,7 +658,7 @@ separated list of accepted status codes. This example will accept 200, 201,
     pub(crate) method: String,
 
     /// Deprecated; use `--base-url` instead
-    #[arg(long, value_parser = parse_base)]
+    #[arg(long, value_parser = parse_base, requires_if(ArgPredicate::IsPresent, "root_dir"))]
     #[serde(skip)]
     pub(crate) base: Option<Base>,
 
@@ -855,42 +855,54 @@ impl Config {
 
             // Keys with defaults to assign
             accept: StatusCodeSelector::default();
+            archive: None;
+            base: None;
             base_url: None;
             basic_auth: None;
-            cache_exclude_status: StatusCodeExcluder::default();
             cache: false;
+            cache_exclude_status: StatusCodeExcluder::default();
             cookie_jar: None;
+            dump: false;
+            dump_inputs: false;
+            exclude: Vec::<String>::new();
             exclude_all_private: false;
             exclude_file: Vec::<String>::new(); // deprecated
             exclude_link_local: false;
             exclude_loopback: false;
             exclude_path: Vec::<String>::new();
             exclude_private: false;
-            exclude: Vec::<String>::new();
             extensions: FileType::default_extensions();
-            fallback_extensions: Vec::<String>::new();
             fallback_base_url: None;
+            fallback_extensions: Vec::<String>::new();
             format: StatsFormat::default();
             glob_ignore_case: false;
             header: Vec::<(String, String)>::new();
+            hidden: false;
+            include: Vec::<String>::new();
             include_fragments: false;
             include_mail: false;
             include_verbatim: false;
             include_wikilinks: false;
-            include: Vec::<String>::new();
+            index_files: None;
             insecure: false;
             max_cache_age: humantime::parse_duration(DEFAULT_MAX_CACHE_AGE).unwrap();
             max_concurrency: DEFAULT_MAX_CONCURRENCY;
             max_redirects: DEFAULT_MAX_REDIRECTS;
             max_retries: DEFAULT_MAX_RETRIES;
             method: DEFAULT_METHOD;
+            min_tls: None;
+            mode: OutputMode::Color;
+            no_ignore: false;
             no_progress: false;
+            offline: false;
             output: None;
             remap: Vec::<String>::new();
             require_https: false;
             retry_wait_time: DEFAULT_RETRY_WAIT_TIME_SECS;
+            root_dir: None;
             scheme: Vec::<String>::new();
             skip_missing: false;
+            suggest: false;
             threads: None;
             timeout: DEFAULT_TIMEOUT_SECS;
             user_agent: DEFAULT_USER_AGENT;
