@@ -48,7 +48,11 @@ fn try_parse_into_uri(
     root_dir: Option<&Path>,
     base: Option<&Base>,
 ) -> Result<Uri> {
-    let base_info = SourceBaseInfo::from_source(source, root_dir, base, None)?;
+    // HACK: if only base_url is specified, use that as a fallback_base_url.
+    let base_info = match (root_dir, base) {
+        (None, Some(base)) => SourceBaseInfo::from_source(source, root_dir, None, Some(base)),
+        (root_dir, base) => SourceBaseInfo::from_source(source, root_dir, base, None),
+    }?;
     base_info.parse_uri(raw_uri)
 }
 
@@ -213,7 +217,7 @@ mod tests {
         let source = InputSource::String(String::new());
 
         let uris = vec![RawUri::from("relative.html")];
-        let requests = create(uris, &source, None, Some(&base), None, None);
+        let requests = create(uris, &source, None, None, Some(&base), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -229,7 +233,7 @@ mod tests {
         let source = InputSource::String(String::new());
 
         let uris = vec![RawUri::from("https://another.com/page")];
-        let requests = create(uris, &source, None, Some(&base), None, None);
+        let requests = create(uris, &source, None, None, Some(&base), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -245,7 +249,7 @@ mod tests {
         let source = InputSource::String(String::new());
 
         let uris = vec![RawUri::from("/root-relative")];
-        let requests = create(uris, &source, None, Some(&base), None, None);
+        let requests = create(uris, &source, None, None, Some(&base), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -261,7 +265,7 @@ mod tests {
         let source = InputSource::String(String::new());
 
         let uris = vec![RawUri::from("../parent")];
-        let requests = create(uris, &source, None, Some(&base), None, None);
+        let requests = create(uris, &source, None, None, Some(&base), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -277,7 +281,7 @@ mod tests {
         let source = InputSource::String(String::new());
 
         let uris = vec![RawUri::from("#fragment")];
-        let requests = create(uris, &source, None, Some(&base), None, None);
+        let requests = create(uris, &source, None, None, Some(&base), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -474,7 +478,7 @@ mod tests {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
         let input_source = InputSource::FsPath(PathBuf::from("page.html"));
         let base_info =
-            SourceBaseInfo::from_source(&input_source, None, Some(&base), None).unwrap();
+            SourceBaseInfo::from_source(&input_source, None, None, Some(&base)).unwrap();
 
         let actual =
             create_request(&RawUri::from("file.html"), &input_source, &base_info, None).unwrap();
@@ -495,10 +499,10 @@ mod tests {
 
     #[test]
     fn test_create_request_from_absolute_file_path() {
-        let base = Base::Local(PathBuf::from("/tmp/lychee"));
+        let base = Base::Local(PathBuf::from("/"));
         let input_source = InputSource::FsPath(PathBuf::from("/tmp/lychee/page.html"));
         let base_info =
-            SourceBaseInfo::from_source(&input_source, None, Some(&base), None).unwrap();
+            SourceBaseInfo::from_source(&input_source, None, None, Some(&base)).unwrap();
 
         // Use an absolute path that's outside the base directory
         let actual = create_request(

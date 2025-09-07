@@ -715,8 +715,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_path_with_base() {
-        let base = Base::try_from("/path/to/root").unwrap();
-        assert_eq!(base, Base::Local("/path/to/root".into()));
+        let base = Base::try_from("https://example.com/a/").unwrap();
 
         let input = Input {
             source: InputSource::String(
@@ -735,9 +734,9 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            path("/path/to/root/index.html"),
-            path("/path/to/root/about.html"),
-            path("/another.html"),
+            website("https://example.com/a/index.html"),
+            website("https://example.com/a/about.html"),
+            website("https://example.com/another.html"),
         ]);
 
         assert_eq!(links, expected_links);
