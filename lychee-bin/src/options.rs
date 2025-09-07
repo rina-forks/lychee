@@ -1,7 +1,7 @@
 use crate::parse::parse_base;
 use crate::verbosity::Verbosity;
 use anyhow::{Context, Error, Result, anyhow};
-use clap::builder::PossibleValuesParser;
+use clap::builder::{ArgPredicate, PossibleValuesParser};
 use clap::{Parser, arg, builder::TypedValueParser};
 use const_format::{concatcp, formatcp};
 use http::{
@@ -662,28 +662,35 @@ separated list of accepted status codes. This example will accept 200, 201,
     #[serde(skip)]
     pub(crate) base: Option<Base>,
 
-    /// Base URL used to resolve relative URLs in local files.
+    /// Remote base URL where the local root-dir will be uploaded.
     /// Example: <https://example.com>
     #[arg(
         short,
         long,
         value_parser = parse_base,
-        long_help = "Base URL to use when resolving relative URLs in local files. If specified,
-relative links in local files are interpreted as being relative to the given
-base URL.
+        requires_if(ArgPredicate::IsPresent, "root_dir"),
+        long_help = "Remote base URL where the local root-dir will be hosted. If `--base-url` is
+specified, `--root-dir` must be specified as well.
 
-For example, given a base URL of `https://example.com/dir/page`, the link `a`
-would resolve to `https://example.com/dir/a` and the link `/b` would resolve
-to `https://example.com/b`. This behavior is not affected by the filesystem
-path of the file containing these links.
+When both `--base-url` and `--root-dir` are specified, then links will be resolved
+*as if* the local root-dir was hosted at the given base-url.
 
-Note that relative URLs without a leading slash become siblings of the base
-URL. If, instead, the base URL ended in a slash, the link would become a child
-of the base URL. For example, a base URL of `https://example.com/dir/page/` and
-a link of `a` would resolve to `https://example.com/dir/page/a`.
+This is done by virtually \"splicing\" the root-dir onto the base-url path. This
+works in both directions: (1) links to subpaths of base-url will be resolved to
+local files within root-dir, with consideration to the relative subpath, and
+(2) links originating from local files which traverse outside of base-url will
+resolve to remote URLs on the internet.
 
-Basically, the base URL option resolves links as if the local files were hosted
-at the given base URL address."
+The two directions are demonstrated in the examples below. For these examples,
+suppose a base URL of `https://example.com/dir/` and root dir of `/tmp/root`.
+
+- (1) A link to `https://example.com/dir/sub/boop.html` will be resolved to
+  the local file `/tmp/root/sub/boop.html` because it is a subpath of base-url.
+  The relative subpath of `/sub/boop.html` is mapped into the root-dir.
+
+- (2) A link in `/tmp/root/index.html` to `../up.html` or `/up.html` will be
+  resolved to the remote URL `https://example.com/up.html` because it traverses
+  outside of base-url."
     )]
     #[serde(default)]
     pub(crate) base_url: Option<Base>,
@@ -692,21 +699,58 @@ at the given base URL address."
     /// Must be an absolute path.
     #[arg(
         long,
-        long_help = "Root directory to use when checking absolute links in local files. This option is
-required if absolute links appear in local files, otherwise those links will be
-flagged as errors. This must be an absolute path (i.e., one beginning with `/`).
+        long_help = "Root directory to use when checking local files. This option is required if
+absolute links appear in local files, otherwise those links will be flagged as
+errors. This must be an absolute path (i.e., one beginning with `/`).
 
-If specified, absolute links in local files are resolved by prefixing the given
-root directory to the requested absolute link. For example, with a root-dir of
-`/root/dir`, a link to `/page.html` would be resolved to `/root/dir/page.html`.
+If specified, `--root-dir` acts according to three main rules:
 
-This option can be specified alongside `--base-url`. If both are given, an
-absolute link is resolved by constructing a URL from three parts: the domain
-name specified in `--base-url`, followed by the `--root-dir` directory path,
-followed by the absolute link's own path."
+- Links are resolved *as if* the given root-dir was hosted at the root of a
+  website. For example, with a root-dir of `/tmp`, a link in `/tmp/a/index.html`
+  to `/page.html` would be resolved to `/tmp/page.html`.
+
+- `--root-dir` only applies to links originating from files which are subpaths
+  of the given root directory. Other links will be unaffected (e.g., absolute
+  links from files outside of root-dir will still fail to be found).
+
+- `--root-dir` also serves to limit parent path traversal. With a root-dir of
+  `/tmp`, a link in `/tmp/index.html` to `../up.html` would be resolved to
+  `/tmp/up.html` and not `/up.html`. This is because if `/tmp` was uploaded to
+  a website root, traversing up beyond the root would not change the path.
+
+Additiionally, this option can be specified alongside `--base-url`. If both are
+given, the behavior is augmented to resolve links as if `--root-dir` was
+available at the remote URL of `--base-url`. See the help of `--base-url` for
+more information."
     )]
     #[serde(default)]
     pub(crate) root_dir: Option<PathBuf>,
+
+    /// Fallback base URL used for inputs where no more suitable base URL applies.
+    #[arg(
+        long,
+        value_parser = parse_base,
+        long_help = "Fallback base URL used for inputs where no more suitable base URL applies.
+Each input source may have an associated base URL which describes where that
+input was located, for the purpose of resolving relative links. Where Lychee
+cannot determine a *well-founded* base URL for an input source, this fallback
+base URL will be used.
+
+A *well-founded* base URL is one which:
+- originates from a remote URL, in which case the base URL is just the remote URL, or
+- originates from a local file where `--root-dir` has been specified and the local
+  file path is a subpath of `--root-dir`.
+
+In all other cases, the base URL is not well-founded and this fallback base URL
+applies. In particular, this includes all links passed by stdin and, if `--root-dir`
+is unspecified, this includes all links within local files.
+
+Note that this fallback base URL applies without consideration to local file paths.
+For local files, it is usually better to specify `--base-url` and `--root-dir`
+which will construct a base URL while considering subpaths of `--root-dir`."
+    )]
+    #[serde(default)]
+    pub(crate) fallback_base_url: Option<Base>,
 
     /// Basic authentication support. E.g. `http://example.com username:password`
     #[arg(long)]
