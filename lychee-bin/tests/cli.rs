@@ -425,7 +425,7 @@ mod cli {
         let dir = fixtures_path().join("resolve_paths");
 
         cmd.arg("--offline")
-            .arg("--base-url")
+            .arg("--root-dir")
             .arg(&dir)
             .arg(dir.join("index.html"))
             .env_clear()
@@ -460,9 +460,9 @@ mod cli {
 
         cmd.arg("--offline")
             .arg("--root-dir")
-            .arg("/resolve_paths")
+            .arg(dir.join("resolve_paths"))
             .arg("--base-url")
-            .arg(&dir)
+            .arg(dir.join("resolve_paths"))
             .arg(dir.join("resolve_paths").join("index.html"))
             .env_clear()
             .assert()

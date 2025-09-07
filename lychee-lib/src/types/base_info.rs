@@ -7,6 +7,7 @@ use crate::InputSource;
 use crate::Uri;
 use crate::types::uri::raw::RawUri;
 use crate::utils::url::ReqwestUrlExt;
+use url::PathSegmentsMut;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SourceBaseInfo {
@@ -31,7 +32,7 @@ impl SourceBaseInfo {
         match conflicting_mapping {
             Some((base, root)) => Err(ErrorKind::InvalidBase(
                 base.to_string(),
-                format!("base is parent or child of {root}"),
+                format!("base cannot be parent or child of root-dir {root}"),
             )),
             None => Ok(Self {
                 base,
@@ -66,6 +67,16 @@ impl SourceBaseInfo {
             .or_else(|| root_dir_url.clone());
 
         let source_url = source.to_url()?;
+
+        // BACKWARDS COMPAT: if /only/ base-url is given, then apply it
+        // indiscriminately to all inputs, regardless of source, and apply no mappings.
+        match (&base_url, &root_dir_url) {
+            (Some(base_url), None) => {
+                let (origin, subpath, _) = Self::infer_default_base(base_url)?;
+                return Self::new(Some((origin, subpath, true)), vec![]);
+            }
+            _ => ()
+        }
 
         let remote_local_mappings = match (base_url, root_dir_url) {
             (Some(base_url), Some(root_dir_url)) => vec![(base_url, root_dir_url)],
@@ -102,7 +113,7 @@ impl SourceBaseInfo {
             None => Err(e),
         })?;
 
-        let url = self
+        let mut url = self
             .remote_local_mappings
             .iter()
             .find_map(|(remote, local)| {
@@ -110,6 +121,11 @@ impl SourceBaseInfo {
                     .and_then(|subpath| local.join(&subpath).ok())
             })
             .unwrap_or(url);
+
+        // BACKWARDS COMPAT: delete trailing slash for file urls
+        if url.scheme() == "file" {
+            let _ = url.path_segments_mut().as_mut().map(PathSegmentsMut::pop_if_empty);
+        }
 
         Ok(Uri { url })
     }

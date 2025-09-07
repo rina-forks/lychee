@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_fragment_url_resolution_from_root_dir_and_base_url() {
-        let root_dir = PathBuf::from("/tmp/lychee");
+        let root_dir = PathBuf::from("/some");
         let base = Base::try_from("https://example.com/path/page.html").unwrap();
         let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
 
@@ -447,7 +447,7 @@ mod tests {
         assert!(
             requests
                 .iter()
-                .any(|r| r.uri.url.as_str() == "https://example.com/path/page.html#fragment")
+                .any(|r| r.uri.url.as_str() == "/some/page.html#fragment")
         );
     }
 
