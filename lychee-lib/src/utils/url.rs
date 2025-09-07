@@ -27,15 +27,15 @@ pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>>
 }
 
 pub(crate) trait ReqwestUrlExt {
-    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String>;
+    fn strip_prefix(&self, prefix: &Url) -> Option<String>;
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
 }
 
-impl ReqwestUrlExt for reqwest::Url {
-    fn strip_prefix(&self, prefix: &reqwest::Url) -> Option<String> {
+impl ReqwestUrlExt for Url {
+    fn strip_prefix(&self, prefix: &Url) -> Option<String> {
         prefix
             .make_relative(self)
-            .filter(|subpath| !subpath.starts_with("../"))
+            .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with("/"))
         // .inspect(|x| println!("subpathing {}", x))
         // .filter(|_| prefix.as_str().starts_with(self.as_str()))
     }
@@ -72,6 +72,29 @@ impl ReqwestUrlExt for reqwest::Url {
             None => Ok(url.into_owned()),
         }
         // .inspect(|x| println!("---> {x}"))
+    }
+}
+
+#[cfg(test)]
+mod test_url_ext {
+    use super::*;
+
+    #[test]
+    fn test_strip_prefix() {
+        // note trailing slashes for subpaths, otherwise everything becomes siblings
+        let goog = Url::parse("https://goog.com").unwrap();
+        let goog_subpath = goog.join("subpath/").unwrap();
+        let goog_subsubpath = goog_subpath.join("sub2path/").unwrap();
+
+        assert_eq!(goog.strip_prefix(&goog).as_deref(), Some(""));
+
+        assert_eq!(
+            goog_subpath.strip_prefix(&goog).as_deref(),
+            Some("subpath/")
+        );
+        assert_eq!(goog.strip_prefix(&goog_subpath).as_deref(), None);
+
+        assert_eq!(goog_subpath.strip_prefix(&goog_subsubpath).as_deref(), None);
     }
 }
 
