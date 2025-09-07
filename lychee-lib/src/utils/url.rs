@@ -71,7 +71,7 @@ impl ReqwestUrlExt for reqwest::Url {
             Some(relative_to_base) => base.join(&relative_to_base),
             None => Ok(url.into_owned()),
         }
-        .inspect(|x| println!("---> {x}"))
+        // .inspect(|x| println!("---> {x}"))
     }
 }
 

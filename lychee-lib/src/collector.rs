@@ -289,7 +289,6 @@ impl Collector {
                 async move {
                     let content = content?;
                     let uris: Vec<RawUri> = extractor.extract(&content);
-                    println!("{:?}", &uris);
                     let requests = request::create(
                         uris,
                         &content.source,

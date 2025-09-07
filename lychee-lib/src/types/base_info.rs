@@ -59,7 +59,7 @@ impl SourceBaseInfo {
             .map(|path| Base::Local(path.to_owned()).to_url())
             .transpose()?;
 
-        println!("{:?}", base.clone());
+        // println!("{:?}", base.clone());
         let base_url: Option<Url> = base
             .map(Base::to_url)
             .transpose()?
