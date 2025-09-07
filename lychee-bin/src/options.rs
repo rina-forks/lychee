@@ -869,6 +869,7 @@ impl Config {
             exclude: Vec::<String>::new();
             extensions: FileType::default_extensions();
             fallback_extensions: Vec::<String>::new();
+            fallback_base_url: None;
             format: StatsFormat::default();
             glob_ignore_case: false;
             header: Vec::<(String, String)>::new();

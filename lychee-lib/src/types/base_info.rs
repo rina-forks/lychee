@@ -55,6 +55,7 @@ impl SourceBaseInfo {
         source: &InputSource,
         root_dir: Option<&Path>,
         base: Option<&Base>,
+        fallback_base: Option<&Base>,
     ) -> Result<SourceBaseInfo, ErrorKind> {
         let root_dir_url = root_dir
             .map(|path| Base::Local(path.to_owned()).to_url())
@@ -65,6 +66,9 @@ impl SourceBaseInfo {
             .map(Base::to_url)
             .transpose()?
             .or_else(|| root_dir_url.clone());
+
+        let fallback_base_url = fallback_base.map(Base::to_url).transpose()?;
+        let fallback_base_result = fallback_base_url.map(|url| (url, String::new(), true));
 
         let source_url = source.to_url()?;
 
@@ -84,7 +88,7 @@ impl SourceBaseInfo {
         };
 
         let Some(source_url) = source_url else {
-            return Self::new(None, remote_local_mappings);
+            return Self::new(fallback_base_result, remote_local_mappings);
         };
 
         let base = remote_local_mappings
@@ -94,7 +98,13 @@ impl SourceBaseInfo {
                     .strip_prefix(local)
                     .map(|subpath| (remote.clone(), subpath, true))
             })
-            .map_or_else(|| SourceBaseInfo::infer_default_base(&source_url), Ok)?;
+            .map_or_else(
+                || match fallback_base_result {
+                    Some(fallback) => Ok(fallback),
+                    None => Self::infer_default_base(&source_url),
+                },
+                Ok,
+            )?;
 
         Self::new(Some(base), remote_local_mappings)
     }

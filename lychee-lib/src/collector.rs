@@ -33,6 +33,7 @@ pub struct Collector {
     use_html5ever: bool,
     root_dir: Option<PathBuf>,
     base: Option<Base>,
+    fallback_base: Option<Base>,
     excluded_paths: PathExcludes,
     headers: HeaderMap,
     client: Client,
@@ -56,6 +57,7 @@ impl Default for Collector {
             skip_ignored: true,
             root_dir: None,
             base: None,
+            fallback_base: None,
             headers: HeaderMap::new(),
             client: Client::new(),
             excluded_paths: PathExcludes::empty(),
@@ -70,7 +72,11 @@ impl Collector {
     ///
     /// Returns an `Err` if the `root_dir` is not an absolute path
     /// or if the reqwest `Client` fails to build
-    pub fn new(root_dir: Option<PathBuf>, base: Option<Base>) -> Result<Self> {
+    pub fn new(
+        root_dir: Option<PathBuf>,
+        base: Option<Base>,
+        fallback_base: Option<Base>,
+    ) -> Result<Self> {
         if let Some(root_dir) = &root_dir {
             if root_dir.is_relative() {
                 return Err(ErrorKind::RootDirMustBeAbsolute(root_dir.clone()));
@@ -91,6 +97,7 @@ impl Collector {
             excluded_paths: PathExcludes::empty(),
             root_dir,
             base,
+            fallback_base,
         })
     }
 
@@ -285,6 +292,7 @@ impl Collector {
             .flatten()
             .par_then_unordered(None, move |(content, base)| {
                 let root_dir = self.root_dir.clone();
+                let fallback_base = self.fallback_base.clone();
                 let basic_auth_extractor = self.basic_auth_extractor.clone();
                 async move {
                     let content = content?;
@@ -294,6 +302,7 @@ impl Collector {
                         &content.source,
                         root_dir.as_deref(),
                         base.as_ref(),
+                        fallback_base.as_ref(),
                         basic_auth_extractor.as_ref(),
                     );
                     Result::Ok(stream::iter(requests.into_iter().map(Ok)))
@@ -325,7 +334,7 @@ mod tests {
         root_dir: Option<PathBuf>,
         base: Option<Base>,
     ) -> Result<HashSet<Uri>> {
-        let responses = Collector::new(root_dir, base)?.collect_links(inputs);
+        let responses = Collector::new(root_dir, base, None)?.collect_links(inputs);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
     }
 
@@ -339,7 +348,7 @@ mod tests {
         base: Option<Base>,
         extensions: FileExtensions,
     ) -> Result<HashSet<Uri>> {
-        let responses = Collector::new(root_dir, base)?
+        let responses = Collector::new(root_dir, base, None)?
             .include_verbatim(true)
             .collect_links_from_file_types(inputs, extensions);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)

@@ -48,7 +48,7 @@ fn try_parse_into_uri(
     root_dir: Option<&Path>,
     base: Option<&Base>,
 ) -> Result<Uri> {
-    let base_info = SourceBaseInfo::from_source(source, root_dir, base)?;
+    let base_info = SourceBaseInfo::from_source(source, root_dir, base, None)?;
     base_info.parse_uri(raw_uri)
 }
 
@@ -116,9 +116,10 @@ pub(crate) fn create(
     source: &InputSource,
     root_dir: Option<&Path>,
     base: Option<&Base>,
+    fallback_base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> HashSet<Request> {
-    let base_info = match SourceBaseInfo::from_source(source, root_dir, base) {
+    let base_info = match SourceBaseInfo::from_source(source, root_dir, base, fallback_base) {
         Ok(base_info) => base_info,
         Err(e) => {
             let source = truncate_source(source);
