@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn test_root_relative_url_resolution_from_root_dir() {
         let root_dir = PathBuf::from("/tmp/lychee");
-        let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
+        let source = InputSource::FsPath(PathBuf::from("/tmp/lychee/page.html"));
 
         let uris = vec![RawUri::from("/root-relative")];
         let requests = create(uris, &source, Some(&root_dir), None, None);
@@ -370,7 +370,7 @@ mod tests {
     fn test_relative_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
         let base = Base::try_from("https://example.com/path/page.html").unwrap();
-        let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
+        let source = InputSource::FsPath(PathBuf::from("/tmp/lychee/localpage.html"));
 
         let uris = vec![RawUri::from("relative.html")];
         let requests = create(uris, &source, Some(&root_dir), Some(&base), None);
@@ -379,7 +379,7 @@ mod tests {
         assert!(
             requests
                 .iter()
-                .any(|r| r.uri.url.as_str() == "https://example.com/path/relative.html")
+                .any(|r| r.uri.url.as_str() == "file:///tmp/lychee/relative.html")
         );
     }
 
@@ -392,6 +392,7 @@ mod tests {
         let uris = vec![RawUri::from("https://another.com/page")];
         let requests = create(uris, &source, Some(&root_dir), Some(&base), None);
 
+        println!("{:?}", requests);
         assert_eq!(requests.len(), 1);
         assert!(
             requests
@@ -404,16 +405,17 @@ mod tests {
     fn test_root_relative_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
         let base = Base::try_from("https://example.com/path/page.html").unwrap();
-        let source = InputSource::FsPath(PathBuf::from("/some/page.html"));
+        let source = InputSource::FsPath(PathBuf::from("/tmp/lychee/localpage.html"));
 
         let uris = vec![RawUri::from("/root-relative")];
         let requests = create(uris, &source, Some(&root_dir), Some(&base), None);
 
+        println!("{:?}", requests);
         assert_eq!(requests.len(), 1);
         assert!(
             requests
                 .iter()
-                .any(|r| r.uri.url.as_str() == "https://example.com/tmp/lychee/root-relative")
+                .any(|r| r.uri.url.as_str() == "https://example.com/root-relative")
         );
     }
 
