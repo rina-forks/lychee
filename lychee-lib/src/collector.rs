@@ -332,9 +332,11 @@ mod tests {
     async fn collect(
         inputs: HashSet<Input>,
         root_dir: Option<PathBuf>,
-        base: Option<Base>,
+        fallback_base: Option<Base>,
     ) -> Result<HashSet<Uri>> {
-        let responses = Collector::new(root_dir, base, None)?.collect_links(inputs);
+        // NOTE: base is passed as fallback_base because these tests are written
+        // to test the old behaviour.
+        let responses = Collector::new(root_dir, None, fallback_base)?.collect_links(inputs);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
     }
 
