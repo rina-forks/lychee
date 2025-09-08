@@ -31,8 +31,8 @@ pub struct Collector {
     include_verbatim: bool,
     include_wikilinks: bool,
     use_html5ever: bool,
-    root_dir: Option<PathBuf>,
-    base: Option<Base>,
+    root_and_base: Option<(PathBuf, Option<Base>)>,
+    fallback_base: Option<Base>,
     excluded_paths: PathExcludes,
     headers: HeaderMap,
     client: Client,
@@ -54,8 +54,8 @@ impl Default for Collector {
             use_html5ever: false,
             skip_hidden: true,
             skip_ignored: true,
-            root_dir: None,
-            base: None,
+            root_and_base: None,
+            fallback_base: None,
             headers: HeaderMap::new(),
             client: Client::new(),
             excluded_paths: PathExcludes::empty(),
@@ -70,12 +70,27 @@ impl Collector {
     ///
     /// Returns an `Err` if the `root_dir` is not an absolute path
     /// or if the reqwest `Client` fails to build
-    pub fn new(root_dir: Option<PathBuf>, base: Option<Base>) -> Result<Self> {
+    pub fn new(
+        root_dir: Option<PathBuf>,
+        base: Option<Base>,
+        fallback_base: Option<Base>,
+    ) -> Result<Self> {
         if let Some(root_dir) = &root_dir {
             if root_dir.is_relative() {
                 return Err(ErrorKind::RootDirMustBeAbsolute(root_dir.clone()));
             }
         }
+        let root_and_base = match (root_dir, base) {
+            (None, Some(base)) => {
+                return Err(ErrorKind::InvalidBase(
+                    base.to_string(),
+                    "base must be specified alongside root dir, but root dir is unset".to_string(),
+                ));
+            }
+            (None, None) => None,
+            (Some(root_dir), base) => Some((root_dir, base)),
+        };
+
         Ok(Collector {
             basic_auth_extractor: None,
             skip_missing_inputs: false,
@@ -89,8 +104,8 @@ impl Collector {
                 .build()
                 .map_err(ErrorKind::BuildRequestClient)?,
             excluded_paths: PathExcludes::empty(),
-            root_dir,
-            base,
+            root_and_base,
+            fallback_base,
         })
     }
 
@@ -242,7 +257,6 @@ impl Collector {
         let skip_missing_inputs = self.skip_missing_inputs;
         let skip_hidden = self.skip_hidden;
         let skip_ignored = self.skip_ignored;
-        let global_base = self.base;
         let excluded_paths = self.excluded_paths;
 
         let resolver = UrlContentResolver {
@@ -259,32 +273,25 @@ impl Collector {
 
         stream::iter(inputs)
             .par_then_unordered(None, move |input| {
-                let default_base = global_base.clone();
                 let extensions = extensions.clone();
                 let resolver = resolver.clone();
                 let excluded_paths = excluded_paths.clone();
 
                 async move {
-                    let base = match &input.source {
-                        InputSource::RemoteUrl(url) => Base::try_from(url.as_str()).ok(),
-                        _ => default_base,
-                    };
-
-                    input
-                        .get_contents(
-                            skip_missing_inputs,
-                            skip_hidden,
-                            skip_ignored,
-                            extensions,
-                            resolver,
-                            excluded_paths,
-                        )
-                        .map(move |content| (content, base.clone()))
+                    input.get_contents(
+                        skip_missing_inputs,
+                        skip_hidden,
+                        skip_ignored,
+                        extensions,
+                        resolver,
+                        excluded_paths,
+                    )
                 }
             })
             .flatten()
-            .par_then_unordered(None, move |(content, base)| {
-                let root_dir = self.root_dir.clone();
+            .par_then_unordered(None, move |content| {
+                let root_and_base = self.root_and_base.clone();
+                let fallback_base = self.fallback_base.clone();
                 let basic_auth_extractor = self.basic_auth_extractor.clone();
                 async move {
                     let content = content?;
@@ -292,8 +299,10 @@ impl Collector {
                     let requests = request::create(
                         uris,
                         &content.source,
-                        root_dir.as_ref(),
-                        base.as_ref(),
+                        root_and_base
+                            .as_ref()
+                            .map(|(x, y)| (x.as_ref(), y.as_ref())),
+                        fallback_base.as_ref(),
                         basic_auth_extractor.as_ref(),
                     );
                     Result::Ok(stream::iter(requests.into_iter().map(Ok)))
@@ -324,9 +333,11 @@ mod tests {
     async fn collect(
         inputs: HashSet<Input>,
         root_dir: Option<PathBuf>,
-        base: Option<Base>,
+        fallback_base: Option<Base>,
     ) -> Result<HashSet<Uri>> {
-        let responses = Collector::new(root_dir, base)?.collect_links(inputs);
+        // NOTE: base is passed as fallback_base because these tests are written
+        // to test the old behaviour.
+        let responses = Collector::new(root_dir, None, fallback_base)?.collect_links(inputs);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
     }
 
@@ -340,7 +351,7 @@ mod tests {
         base: Option<Base>,
         extensions: FileExtensions,
     ) -> Result<HashSet<Uri>> {
-        let responses = Collector::new(root_dir, base)?
+        let responses = Collector::new(root_dir, base, None)?
             .include_verbatim(true)
             .collect_links_from_file_types(inputs, extensions);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
@@ -420,7 +431,7 @@ mod tests {
             }),
         ]);
 
-        let collector = Collector::new(Some(temp_dir_path.to_path_buf()), None)?;
+        let collector = Collector::new(Some(temp_dir_path.to_path_buf()), None, None)?;
 
         let sources: Vec<_> = collector.collect_sources(inputs).collect().await;
 
@@ -704,8 +715,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_path_with_base() {
-        let base = Base::try_from("/path/to/root").unwrap();
-        assert_eq!(base, Base::Local("/path/to/root".into()));
+        let base = Base::try_from("https://example.com/a/").unwrap();
 
         let input = Input {
             source: InputSource::String(Cow::Borrowed(
@@ -723,9 +733,9 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            path("/path/to/root/index.html"),
-            path("/path/to/root/about.html"),
-            path("/another.html"),
+            website("https://example.com/a/index.html"),
+            website("https://example.com/a/about.html"),
+            website("https://example.com/another.html"),
         ]);
 
         assert_eq!(links, expected_links);
