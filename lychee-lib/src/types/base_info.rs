@@ -9,10 +9,23 @@ use crate::types::uri::raw::RawUri;
 use crate::utils::url::ReqwestUrlExt;
 use url::PathSegmentsMut;
 
+/// Information needed for resolving relative URLs within a particular
+/// [`InputSource`]. The main entry point for constructing a `SourceBaseInfo`
+/// is [`SourceBaseInfo::from_source`]. Once constructed,
+/// [`SourceBaseInfo::parse_uri`] can be used to parse a URI found within
+/// the `InputSource`.
+///
+/// A `SourceBaseInfo` may or may not have an associated base which is used
+/// for resolving relative URLs. If no base is available, parsing relative
+/// and root-relative links will fail. If a base is available but it is not
+/// *well-founded*, then parsing root-relative links will fail. See
+/// [`SourceBaseInfo::from_source`] for a description of well-founded.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SourceBaseInfo {
-    /// Tuple of `origin`, `subpath`, `allow_absolute`
+    /// Tuple of `origin`, `subpath`, `allow_absolute`. The field `allow_absolute`
+    /// is true if the base is well-founded.
     base: Option<(Url, String, bool)>,
+    /// List of tuples of `remote_url`, `local_url`.
     remote_local_mappings: Vec<(Url, Url)>,
 }
 
@@ -53,6 +66,47 @@ impl SourceBaseInfo {
         Ok((origin, subpath, url.scheme() != "file"))
     }
 
+    /// Constructs a `SourceBaseInfo` from the given input source, root and base
+    /// pair, and fallback base.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - The input source which contains the links we want to resolve.
+    /// * `root_and_base` - An optional pair of root directory and base URL. The
+    ///   somewhat complicated type encodes the fact that if a [`Base`] is provided,
+    ///   then a [`Path`] must be provided too. If the base URL is omitted but root
+    ///   dir is provided, the base URL defaults to the root dir.
+    /// * `fallback_base` - A fallback base URL to use where no other well-founded
+    ///   base URL can be derived. If it is applied, the fallback base URL is
+    ///   considered to be a well-founded base.
+    ///
+    /// # Root and base
+    ///
+    /// The given root and base URL are used to transform the intrinsic base returned
+    /// by [`InputSource::to_url`]. If the intrinsic base is a subpath of the given
+    /// root, then a new base is constructed by taking the intrinsic base and replacing
+    /// the root dir with the given base URL.
+    ///
+    /// In this way, links from local files can be resolved *as if* they were hosted
+    /// in a remote location at the base URL. Later, in [`SourceBaseInfo::parse_uri`],
+    /// remote links which are subpaths of the base URL will be reflected back to
+    /// local files within the root dir.
+    ///
+    /// # Well-founded bases
+    ///
+    /// Formally, a *well-founded* base is one which is derived from an input
+    /// source which is *not* a local file, or one derived from a local file
+    /// source which is a descendent of the given root dir.
+    ///
+    /// Informally, and importantly for using [`SourceBaseInfo`], a well-founded
+    /// base is one where we can sensibly resolve root-relative links (i.e.,
+    /// relative links starting with `/`).
+    ///
+    /// # Errors
+    ///
+    /// This function fails with an [`Err`] if:
+    /// - any of the provided arguments cannot be converted to a URL, or
+    /// - [`SourceBaseInfo::new`] fails.
     pub fn from_source(
         source: &InputSource,
         root_and_base: Option<(&Path, Option<&Base>)>,
