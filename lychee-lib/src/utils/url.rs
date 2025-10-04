@@ -1,6 +1,9 @@
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use linkify::LinkFinder;
+use reqwest::Url;
+use url::ParseError;
 
 static LINK_FINDER: LazyLock<LinkFinder> = LazyLock::new(LinkFinder::new);
 
@@ -21,6 +24,78 @@ pub(crate) fn remove_get_params_and_separate_fragment(url: &str) -> (&str, Optio
 // Use `LinkFinder` to offload the raw link searching in plaintext
 pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>> {
     LINK_FINDER.links(input)
+}
+
+pub(crate) trait ReqwestUrlExt {
+    fn strip_prefix(&self, prefix: &Url) -> Option<String>;
+    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
+}
+
+impl ReqwestUrlExt for Url {
+    fn strip_prefix(&self, prefix: &Url) -> Option<String> {
+        prefix
+            .make_relative(self)
+            .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with('/'))
+        // .inspect(|x| println!("subpathing {}", x))
+        // .filter(|_| prefix.as_str().starts_with(self.as_str()))
+    }
+
+    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError> {
+        let base = self;
+        // println!("applying {}, {}, {}", base, subpath, link);
+        // tests:
+        // - .. out of local base should be blocked.
+        // - scheme-relative urls should work and not spuriously trigger base url
+        // - fully-qualified urls should work
+        // - slash should work to go to local base, if specified
+        // - slash should be forbidden for inferred base urls.
+        // - percent encoding ;-;
+        // - trailing slashes in base-url and/or root-dir
+        // - fragments and query params, on both http and file
+        // - windows file paths ;-;
+        let fake_base = match base.scheme() {
+            "file" => {
+                let mut fake_base = base.join("/")?;
+                fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
+                Some(fake_base)
+            }
+            _ => None,
+        };
+
+        let mut url = Cow::Borrowed(fake_base.as_ref().unwrap_or(base));
+        for subpath in subpaths {
+            url = Cow::Owned(url.join(subpath)?);
+        }
+
+        match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
+            Some(relative_to_base) => base.join(&relative_to_base),
+            None => Ok(url.into_owned()),
+        }
+        // .inspect(|x| println!("---> {x}"))
+    }
+}
+
+#[cfg(test)]
+mod test_url_ext {
+    use super::*;
+
+    #[test]
+    fn test_strip_prefix() {
+        // note trailing slashes for subpaths, otherwise everything becomes siblings
+        let goog = Url::parse("https://goog.com").unwrap();
+        let goog_subpath = goog.join("subpath/").unwrap();
+        let goog_subsubpath = goog_subpath.join("sub2path/").unwrap();
+
+        assert_eq!(goog.strip_prefix(&goog).as_deref(), Some(""));
+
+        assert_eq!(
+            goog_subpath.strip_prefix(&goog).as_deref(),
+            Some("subpath/")
+        );
+        assert_eq!(goog.strip_prefix(&goog_subpath).as_deref(), None);
+
+        assert_eq!(goog_subpath.strip_prefix(&goog_subsubpath).as_deref(), None);
+    }
 }
 
 #[cfg(test)]
