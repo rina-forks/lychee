@@ -43,26 +43,6 @@ pub enum InputSource {
     String(Cow<'static, str>),
 }
 
-impl InputSource {
-    /// Converts an [`InputSource::RemoteUrl`] or [`InputSource::FsPath`]
-    /// to a [`Url`] pointing to the source.
-    ///
-    /// The outer result indicates whether the operation succeeded.
-    /// For `InputSource` variants which are not `RemoteUrl` or `FsPath`,
-    /// the operation will "succeed" with `None`.
-    pub fn to_url(&self) -> Result<Option<Url>, ErrorKind> {
-        match self {
-            Self::RemoteUrl(url) => Ok(Some(url.deref().clone())),
-            Self::FsPath(path) => std::path::absolute(path)
-                .ok()
-                .and_then(|x| Url::from_file_path(x).ok())
-                .ok_or_else(|| ErrorKind::InvalidUrlFromPath(path.to_owned()))
-                .map(Some),
-            _ => Ok(None),
-        }
-    }
-}
-
 /// Resolved input sources that can be processed for content.
 ///
 /// This represents input sources after glob pattern expansion.
@@ -81,6 +61,26 @@ pub enum ResolvedInputSource {
     Stdin,
     /// Raw string input.
     String(Cow<'static, str>),
+}
+
+impl ResolvedInputSource {
+    /// Converts an [`InputSource::RemoteUrl`] or [`InputSource::FsPath`]
+    /// to a [`Url`] pointing to the source.
+    ///
+    /// The outer result indicates whether the operation succeeded.
+    /// For `InputSource` variants which are not `RemoteUrl` or `FsPath`,
+    /// the operation will "succeed" with `None`.
+    pub fn to_url(&self) -> Result<Option<Url>, ErrorKind> {
+        match self {
+            Self::RemoteUrl(url) => Ok(Some(url.deref().clone())),
+            Self::FsPath(path) => std::path::absolute(path)
+                .ok()
+                .and_then(|x| Url::from_file_path(x).ok())
+                .ok_or_else(|| ErrorKind::InvalidUrlFromPath(path.to_owned()))
+                .map(Some),
+            _ => Ok(None),
+        }
+    }
 }
 
 impl From<ResolvedInputSource> for InputSource {

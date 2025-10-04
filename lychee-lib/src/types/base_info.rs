@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::Base;
 use crate::ErrorKind;
-use crate::InputSource;
+use crate::ResolvedInputSource;
 use crate::Uri;
 use crate::types::uri::raw::RawUri;
 use crate::utils::url::ReqwestUrlExt;
@@ -108,7 +108,7 @@ impl SourceBaseInfo {
     /// - any of the provided arguments cannot be converted to a URL, or
     /// - [`SourceBaseInfo::new`] fails.
     pub fn from_source(
-        source: &InputSource,
+        source: &ResolvedInputSource,
         root_and_base: Option<(&Path, Option<&Base>)>,
         fallback_base: Option<&Base>,
     ) -> Result<SourceBaseInfo, ErrorKind> {

@@ -11,10 +11,8 @@ use crate::types::SourceBaseInfo;
 use crate::{
     Base, BasicAuthCredentials, ErrorKind, Request, Result, Uri,
     basic_auth::BasicAuthExtractor,
-    types::{InputSource, uri::raw::RawUri},
-    utils::{path, url, url::ReqwestUrlExt},
     types::{ResolvedInputSource, uri::raw::RawUri},
-    utils::{path, url},
+    utils::{path, url, url::ReqwestUrlExt},
 };
 use ::url::ParseError;
 
@@ -111,7 +109,6 @@ pub(crate) fn create(
     let base_info = match SourceBaseInfo::from_source(source, root_and_base, fallback_base) {
         Ok(base_info) => base_info,
         Err(e) => {
-            let source = truncate_source(source);
             warn!("Error handling source {source}: {e:?}");
             return HashSet::new();
         }
