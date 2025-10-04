@@ -119,6 +119,12 @@ pkg install lychee
 apk add lychee
 ```
 
+### WinGet (Windows)
+
+```sh
+winget install --id lycheeverse.lychee
+```
+
 ### Chocolatey (Windows)
 
 ```sh
@@ -324,13 +330,34 @@ A fast, async link checker
 
 Finds broken URLs and mail addresses inside Markdown, HTML, `reStructuredText`, websites and more!
 
-Usage: lychee [OPTIONS] <inputs>...
+Usage: lychee [OPTIONS] [inputs]...
 
 Arguments:
-  <inputs>...
-          The inputs (where to get links to check from). These can be: files (e.g. `README.md`), file globs (e.g. `"~/git/*/README.md"`), remote URLs (e.g. `https://example.com/README.md`) or standard input (`-`). NOTE: Use `--` to separate inputs from options that allow multiple arguments
+  [inputs]...
+          Inputs for link checking (where to get links to check from). These can be:
+          files (e.g. `README.md`), file globs (e.g. `'~/git/*/README.md'`), remote URLs
+          (e.g. `https://example.com/README.md`), or standard input (`-`). Alternatively,
+          use `--files-from` to read inputs from a file.
+
+          NOTE: Use `--` to separate inputs from options that allow multiple arguments.
 
 Options:
+      --files-from <PATH>
+          Read input filenames from the given file or stdin (if path is '-').
+
+          This is useful when you have a large number of inputs that would be
+          cumbersome to specify on the command line directly.
+
+          Examples:
+            lychee --files-from list.txt
+            find . -name '*.md' | lychee --files-from -
+            echo 'README.md' | lychee --files-from -
+
+          File Format:
+            Each line should contain one input (file path, URL, or glob pattern).
+            Lines starting with '#' are treated as comments and ignored.
+            Empty lines are also ignored.
+
   -c, --config <CONFIG_FILE>
           Configuration file to use
 
@@ -355,6 +382,11 @@ Options:
 
           [default: md,mkd,mdx,mdown,mdwn,mkdn,mkdown,markdown,html,htm,txt]
 
+      --default-extension <EXTENSION>
+          Default file extension to treat files without extensions as having.
+
+          This is useful for files without extensions or with unknown extensions. The extension will be used to determine the file type for processing. Examples: --default-extension md, --default-extension html
+
       --cache
           Use request cache stored on disk at `.lycheecache`
 
@@ -375,9 +407,9 @@ Options:
           - 500..=599 (excludes any status code from 500 to 599 inclusive)
           - 500..600 (excludes any status code from 500 to 600 excluding 600, same as 500..=599)
 
-          Use "lychee --cache-exclude-status '429, 500..502' <inputs>..." to provide a comma- separated
-          list of excluded status codes. This example will not cache results with a status code of 429, 500
-          and 501.
+          Use "lychee --cache-exclude-status '429, 500..502' <inputs>..." to provide a
+          comma-separated list of excluded status codes. This example will not cache results
+          with a status code of 429, 500 and 501.
 
           [default: ]
 
@@ -427,7 +459,8 @@ Options:
           Proceed for server connections considered insecure (invalid TLS)
 
   -s, --scheme <SCHEME>
-          Only test links with the given schemes (e.g. https). Omit to check links with any other scheme. At the moment, we support http, https, file, and mailto
+          Only test links with the given schemes (e.g. https). Omit to check links with
+          any other scheme. At the moment, we support http, https, file, and mailto.
 
       --offline
           Only check local files and block network requests
@@ -569,6 +602,9 @@ Options:
             resolved to the remote URL `https://example.com/up.html` because it traverses
             outside of base-url.
 
+          The provided base URL value must either be a URL (with scheme) or an absolute path.
+          Note that certain URL schemes cannot be used as a base, e.g., `data` and `mailto`.
+
       --root-dir <ROOT_DIR>
           Root directory to use when checking local files. This option is required if
           absolute links appear in local files, otherwise those links will be flagged as
@@ -656,7 +692,9 @@ Options:
           When HTTPS is available, treat HTTP links as errors
 
       --cookie-jar <COOKIE_JAR>
-          Tell lychee to read cookies from the given file. Cookies will be stored in the cookie jar and sent with requests. New cookies will be stored in the cookie jar and existing cookies will be updated
+          Tell lychee to read cookies from the given file. Cookies will be stored in the
+          cookie jar and sent with requests. New cookies will be stored in the cookie jar
+          and existing cookies will be updated.
 
       --include-wikilinks
           Check WikiLinks in Markdown files

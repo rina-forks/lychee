@@ -26,35 +26,35 @@ struct StatsTableEntry {
 fn stats_table(stats: &ResponseStats) -> String {
     let stats = vec![
         StatsTableEntry {
-            status: "\u{1f50d} Total",
+            status: "🔍 Total",
             count: stats.total,
         },
         StatsTableEntry {
-            status: "\u{2705} Successful",
+            status: "✅ Successful",
             count: stats.successful,
         },
         StatsTableEntry {
-            status: "\u{23f3} Timeouts",
+            status: "⏳ Timeouts",
             count: stats.timeouts,
         },
         StatsTableEntry {
-            status: "\u{1f500} Redirected",
+            status: "🔀 Redirected",
             count: stats.redirects,
         },
         StatsTableEntry {
-            status: "\u{1f47b} Excluded",
+            status: "👻 Excluded",
             count: stats.excludes,
         },
         StatsTableEntry {
-            status: "\u{2753} Unknown",
+            status: "❓ Unknown",
             count: stats.unknown,
         },
         StatsTableEntry {
-            status: "\u{1f6ab} Errors",
+            status: "🚫 Errors",
             count: stats.errors,
         },
         StatsTableEntry {
-            status: "\u{26d4} Unsupported",
+            status: "⛔ Unsupported",
             count: stats.unsupported,
         },
     ];
@@ -104,7 +104,13 @@ impl Display for MarkdownResponseStats {
         writeln!(f, "{}", stats_table(&self.0))?;
 
         write_stats_per_input(f, "Errors", &stats.error_map, |response| {
-            markdown_response(response).map_err(|_e| fmt::Error)
+            markdown_response(response).map_err(|_| fmt::Error)
+        })?;
+
+        write_stats_per_input(f, "Redirects", &stats.redirect_map, |response| {
+            markdown_response(response)
+                .map(|s| s.to_string())
+                .map_err(|_| fmt::Error)
         })?;
 
         write_stats_per_input(f, "Suggestions", &stats.suggestion_map, |suggestion| {
@@ -159,7 +165,10 @@ impl StatsFormatter for Markdown {
 #[cfg(test)]
 mod tests {
     use http::StatusCode;
-    use lychee_lib::{CacheStatus, InputSource, Response, ResponseBody, Status, Uri};
+    use lychee_lib::{
+        CacheStatus, InputSource, Redirects, ResolvedInputSource, Response, ResponseBody, Status,
+        Uri,
+    };
     use reqwest::Url;
 
     use crate::formatters::suggestion::Suggestion;
@@ -216,12 +225,15 @@ mod tests {
     #[test]
     fn test_render_summary() {
         let mut stats = ResponseStats::default();
-        let response = Response::new(
+
+        // Add cached error
+        stats.add(Response::new(
             Uri::try_from("http://127.0.0.1").unwrap(),
             Status::Cached(CacheStatus::Error(Some(404))),
-            InputSource::Stdin,
-        );
-        stats.add(response);
+            ResolvedInputSource::Stdin,
+        ));
+
+        // Add suggestion
         stats
             .suggestion_map
             .entry((InputSource::Stdin).clone())
@@ -230,15 +242,30 @@ mod tests {
                 suggestion: Url::parse("https://example.com/suggestion").unwrap(),
                 original: Url::parse("https://example.com/original").unwrap(),
             });
+
+        // Add redirect
+        stats.add(Response::new(
+            Uri::try_from("http://redirected.dev").unwrap(),
+            Status::Redirected(
+                StatusCode::OK,
+                Redirects::from(vec![
+                    Url::parse("https://1.dev").unwrap(),
+                    Url::parse("https://2.dev").unwrap(),
+                    Url::parse("http://redirected.dev").unwrap(),
+                ]),
+            ),
+            ResolvedInputSource::Stdin,
+        ));
+
         let summary = MarkdownResponseStats(stats);
         let expected = "# Summary
 
 | Status         | Count |
 |----------------|-------|
-| 🔍 Total       | 1     |
+| 🔍 Total       | 2     |
 | ✅ Successful  | 0     |
 | ⏳ Timeouts    | 0     |
-| 🔀 Redirected  | 0     |
+| 🔀 Redirected  | 1     |
 | 👻 Excluded    | 0     |
 | ❓ Unknown     | 0     |
 | 🚫 Errors      | 1     |
@@ -249,6 +276,12 @@ mod tests {
 ### Errors in stdin
 
 * [404] <http://127.0.0.1/> | Error (cached)
+
+## Redirects per input
+
+### Redirects in stdin
+
+* [200] <http://redirected.dev/> | Redirect: Followed 2 redirects resolving to the final status of: OK. Redirects: https://1.dev/ --> https://2.dev/ --> http://redirected.dev/
 
 ## Suggestions per input
 

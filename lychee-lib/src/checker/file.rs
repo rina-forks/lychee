@@ -229,6 +229,15 @@ impl FileChecker {
             None => &[".".to_owned()],
         };
 
+        let invalid_index_error = || {
+            // Drop empty index file names. These will never be accepted as valid
+            // index files, and doing this makes cleaner error reporting.
+            let mut names = index_names_to_try.to_vec();
+            names.retain(|x| !x.is_empty());
+
+            ErrorKind::InvalidIndexFile(names)
+        };
+
         index_names_to_try
             .iter()
             .find_map(|filename| {
@@ -242,7 +251,7 @@ impl FileChecker {
                 let path = dir_path.join(filename);
                 exists(&path).then_some(path)
             })
-            .ok_or_else(|| ErrorKind::InvalidIndexFile(dir_path.to_path_buf()))
+            .ok_or_else(invalid_index_error)
     }
 
     /// Checks a resolved file, optionally verifying fragments for HTML files.
@@ -308,13 +317,12 @@ impl FileChecker {
 
 #[cfg(test)]
 mod tests {
-
     use super::FileChecker;
-    use crate::test_utils::{fixture_uri, fixtures_path};
     use crate::{
         ErrorKind::{InvalidFilePath, InvalidFragment, InvalidIndexFile},
-        Status,
+        Status, Uri,
     };
+    use test_utils::{fixture_uri, fixtures_path};
 
     /// Calls [`FileChecker::check`] on the given [`FileChecker`] with given URL
     /// path (relative to the fixtures directory).
@@ -322,7 +330,7 @@ mod tests {
     /// The result of checking the link is matched against the given pattern.
     macro_rules! assert_filecheck {
         ($checker:expr, $path:expr, $pattern:pat) => {
-            let uri = fixture_uri($path);
+            let uri = Uri::from(fixture_uri!($path));
             let result = $checker.check(&uri).await;
             assert!(
                 matches!(result, $pattern),
@@ -341,7 +349,7 @@ mod tests {
     /// The pattern should match values of type `Result<&str, ErrorKind>`.
     macro_rules! assert_resolves {
         ($checker:expr, $subpath:expr, $expected:pat) => {
-            let uri = fixture_uri($subpath);
+            let uri = Uri::from(fixture_uri!($subpath));
             let path = uri
                 .url
                 .to_file_path()
@@ -349,7 +357,7 @@ mod tests {
             let result = $checker.resolve_local_path(&path, &uri);
             let result_subpath = result
                 .as_deref()
-                .map(|p| p.strip_prefix(fixtures_path()).unwrap())
+                .map(|p| p.strip_prefix(fixtures_path!()).unwrap())
                 .map(|p| p.to_string_lossy());
             assert!(
                 matches!(result_subpath.as_deref(), $expected),
@@ -537,7 +545,7 @@ mod tests {
         );
 
         // absolute paths to a file on disk should also work
-        let absolute_html = fixtures_path()
+        let absolute_html = fixtures_path!()
             .join("filechecker/index_dir/index.html")
             .to_str()
             .expect("expected utf-8 fixtures path")

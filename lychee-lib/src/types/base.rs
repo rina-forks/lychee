@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::{convert::TryFrom, path::PathBuf};
 
-use crate::{ErrorKind, InputSource};
+use crate::{ErrorKind, ResolvedInputSource};
 
 /// When encountering links without a full domain in a document,
 /// the base determines where this resource can be found.
@@ -41,9 +41,9 @@ impl Base {
         }
     }
 
-    pub(crate) fn from_source(source: &InputSource) -> Option<Base> {
+    pub(crate) fn from_source(source: &ResolvedInputSource) -> Option<Base> {
         match &source {
-            InputSource::RemoteUrl(url) => {
+            ResolvedInputSource::RemoteUrl(url) => {
                 // Create a new URL with just the scheme, host, and port
                 let mut base_url = url.clone();
                 base_url.set_path("");
@@ -68,12 +68,24 @@ impl TryFrom<&str> for Base {
             if url.cannot_be_a_base() {
                 return Err(ErrorKind::InvalidBase(
                     value.to_string(),
-                    "The given URL cannot be a base".to_string(),
+                    "The given URL cannot be used as a base URL".to_string(),
                 ));
             }
             return Ok(Self::Remote(url));
         }
-        Ok(Self::Local(PathBuf::from(value)))
+
+        // require absolute paths in `Base::Local`. a local non-relative base is
+        // basically useless because it cannot be used to join URLs and will
+        // cause InvalidBaseJoin.
+        let path = PathBuf::from(value);
+        if path.is_absolute() {
+            Ok(Self::Local(path))
+        } else {
+            Err(ErrorKind::InvalidBase(
+                value.to_string(),
+                "Base must either be a URL (with scheme) or an absolute local path".to_string(),
+            ))
+        }
     }
 }
 
@@ -117,12 +129,21 @@ mod test_base {
 
     #[test]
     fn test_valid_local_path_string_as_base() -> Result<()> {
-        let cases = vec!["/tmp/lychee", "/tmp/lychee/", "tmp/lychee/"];
+        let cases = vec!["/tmp/lychee", "/tmp/lychee/"];
 
         for case in cases {
             assert_eq!(Base::try_from(case)?, Base::Local(PathBuf::from(case)));
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_invalid_local_path_string_as_base() {
+        let cases = vec!["a", "tmp/lychee/", "example.com", "../nonlocal"];
+
+        for case in cases {
+            assert!(Base::try_from(case).is_err());
+        }
     }
 
     #[test]
@@ -145,7 +166,7 @@ mod test_base {
             ),
         ] {
             let url = Url::parse(url).unwrap();
-            let source = InputSource::RemoteUrl(Box::new(url.clone()));
+            let source = ResolvedInputSource::RemoteUrl(Box::new(url.clone()));
             let base = Base::from_source(&source);
             let expected = Base::Remote(Url::parse(expected).unwrap());
             assert_eq!(base, Some(expected));

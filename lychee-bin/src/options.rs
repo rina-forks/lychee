@@ -1,3 +1,4 @@
+use crate::files_from::FilesFrom;
 use crate::parse::parse_base;
 use crate::verbosity::Verbosity;
 use anyhow::{Context, Error, Result, anyhow};
@@ -14,7 +15,7 @@ use lychee_lib::{
     FileType, Input, StatusCodeExcluder, StatusCodeSelector, archive::Archive,
 };
 use reqwest::tls;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -51,7 +52,9 @@ const HELP_MSG_CONFIG_FILE: &str = formatcp!(
 const TIMEOUT_STR: &str = concatcp!(DEFAULT_TIMEOUT_SECS);
 const RETRY_WAIT_TIME_STR: &str = concatcp!(DEFAULT_RETRY_WAIT_TIME_SECS);
 
-#[derive(Debug, Deserialize, Default, Clone, Display, EnumIter, EnumString, VariantNames)]
+#[derive(
+    Debug, Deserialize, Default, Clone, Display, EnumIter, EnumString, VariantNames, PartialEq, Eq,
+)]
 #[non_exhaustive]
 pub(crate) enum TlsVersion {
     #[serde(rename = "TLSv1_0")]
@@ -196,7 +199,14 @@ default_function! {
 
 // Macro for merging configuration values
 macro_rules! fold_in {
-    ( $cli:ident , $toml:ident ; $( $key:ident : $default:expr; )* ) => {
+    ($cli:ident , $toml:ident ; $ty:ident { $(..$ignore:ident,)* $( $key:ident : $default:expr, )* } ) => {
+        if (false) {
+            #[allow(dead_code, unused, clippy::diverging_sub_expression)]
+            let _check_fold_in_exhaustivity = $ty {
+                $($key: unreachable!(), )*
+                $($ignore: unreachable!(), )*
+            };
+        };
         $(
             if $cli.$key == $default && $toml.$key != $default {
                 $cli.$key = $toml.$key;
@@ -309,12 +319,39 @@ impl HeaderMapExt for HeaderMap {
 #[derive(Parser, Debug)]
 #[command(version, about)]
 pub(crate) struct LycheeOptions {
-    /// The inputs (where to get links to check from).
-    /// These can be: files (e.g. `README.md`), file globs (e.g. `"~/git/*/README.md"`),
-    /// remote URLs (e.g. `https://example.com/README.md`) or standard input (`-`).
-    /// NOTE: Use `--` to separate inputs from options that allow multiple arguments.
-    #[arg(name = "inputs", required = true)]
+    /// Inputs for link checking (where to get links to check from).
+    #[arg(
+        name = "inputs",
+        required_unless_present = "files_from",
+        long_help = "Inputs for link checking (where to get links to check from). These can be:
+files (e.g. `README.md`), file globs (e.g. `'~/git/*/README.md'`), remote URLs
+(e.g. `https://example.com/README.md`), or standard input (`-`). Alternatively,
+use `--files-from` to read inputs from a file.
+
+NOTE: Use `--` to separate inputs from options that allow multiple arguments."
+    )]
     raw_inputs: Vec<String>,
+
+    /// Read input filenames from the given file or stdin (if path is '-').
+    #[arg(
+        long = "files-from",
+        value_name = "PATH",
+        long_help = "Read input filenames from the given file or stdin (if path is '-').
+
+This is useful when you have a large number of inputs that would be
+cumbersome to specify on the command line directly.
+
+Examples:
+  lychee --files-from list.txt
+  find . -name '*.md' | lychee --files-from -
+  echo 'README.md' | lychee --files-from -
+
+File Format:
+  Each line should contain one input (file path, URL, or glob pattern).
+  Lines starting with '#' are treated as comments and ignored.
+  Empty lines are also ignored."
+    )]
+    files_from: Option<PathBuf>,
 
     /// Configuration file to use
     #[arg(short, long = "config")]
@@ -331,9 +368,25 @@ impl LycheeOptions {
     // accept a `Vec<Input>` in `LycheeOptions` and do the conversion there, but
     // we wouldn't get access to `glob_ignore_case`.
     pub(crate) fn inputs(&self) -> Result<HashSet<Input>> {
-        self.raw_inputs
+        let mut all_inputs = self.raw_inputs.clone();
+
+        // If --files-from is specified, read inputs from the file
+        if let Some(files_from_path) = &self.files_from {
+            let files_from = FilesFrom::try_from(files_from_path.as_path())
+                .context("Cannot read inputs from --files-from")?;
+            all_inputs.extend(files_from.inputs);
+        }
+
+        // Convert default extension to FileType if provided
+        let default_file_type = self
+            .config
+            .default_extension
+            .as_deref()
+            .and_then(FileType::from_extension);
+
+        all_inputs
             .iter()
-            .map(|raw_input| Input::new(raw_input, None, self.config.glob_ignore_case))
+            .map(|raw_input| Input::new(raw_input, default_file_type, self.config.glob_ignore_case))
             .collect::<Result<_, _>>()
             .context("Cannot parse inputs from arguments")
     }
@@ -382,6 +435,15 @@ specify both extensions explicitly."
     #[serde(default = "FileExtensions::default")]
     pub(crate) extensions: FileExtensions,
 
+    /// Default file extension to treat files without extensions as having.
+    ///
+    /// This is useful for files without extensions or with unknown extensions.
+    /// The extension will be used to determine the file type for processing.
+    /// Examples: --default-extension md, --default-extension html
+    #[arg(long, value_name = "EXTENSION")]
+    #[serde(default)]
+    pub(crate) default_extension: Option<String>,
+
     #[arg(help = HELP_MSG_CACHE)]
     #[arg(long)]
     #[serde(default)]
@@ -412,9 +474,9 @@ examples are:
 - 500..=599 (excludes any status code from 500 to 599 inclusive)
 - 500..600 (excludes any status code from 500 to 600 excluding 600, same as 500..=599)
 
-Use \"lychee --cache-exclude-status '429, 500..502' <inputs>...\" to provide a comma- separated
-list of excluded status codes. This example will not cache results with a status code of 429, 500
-and 501."
+Use \"lychee --cache-exclude-status '429, 500..502' <inputs>...\" to provide a
+comma-separated list of excluded status codes. This example will not cache results
+with a status code of 429, 500 and 501."
     )]
     #[serde(default = "cache_exclude_selector")]
     pub(crate) cache_exclude_status: StatusCodeExcluder,
@@ -482,7 +544,12 @@ and 501."
     /// Only test links with the given schemes (e.g. https).
     /// Omit to check links with any other scheme.
     /// At the moment, we support http, https, file, and mailto.
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        long_help = "Only test links with the given schemes (e.g. https). Omit to check links with
+any other scheme. At the moment, we support http, https, file, and mailto."
+    )]
     #[serde(default)]
     pub(crate) scheme: Vec<String>,
 
@@ -690,7 +757,10 @@ suppose a base URL of `https://example.com/dir/` and root dir of `/tmp/root`.
 
 - (2) A link in `/tmp/root/index.html` to `../up.html` or `/up.html` will be
   resolved to the remote URL `https://example.com/up.html` because it traverses
-  outside of base-url."
+  outside of base-url.
+
+The provided base URL value must either be a URL (with scheme) or an absolute path.
+Note that certain URL schemes cannot be used as a base, e.g., `data` and `mailto`."
     )]
     #[serde(default)]
     pub(crate) base_url: Option<Base>,
@@ -808,10 +878,13 @@ which will construct a base URL while considering subpaths of `--root-dir`."
     #[serde(default)]
     pub(crate) require_https: bool,
 
-    /// Tell lychee to read cookies from the given file.
-    /// Cookies will be stored in the cookie jar and sent with requests.
-    /// New cookies will be stored in the cookie jar and existing cookies will be updated.
-    #[arg(long)]
+    /// Read and write cookies using the given file
+    #[arg(
+        long,
+        long_help = "Tell lychee to read cookies from the given file. Cookies will be stored in the
+cookie jar and sent with requests. New cookies will be stored in the cookie jar
+and existing cookies will be updated."
+    )]
     #[serde(default)]
     pub(crate) cookie_jar: Option<PathBuf>,
 
@@ -849,80 +922,78 @@ impl Config {
         // Special handling for headers before fold_in!
         self.merge_headers(&toml.header);
 
+        // If the config file has a value for the GitHub token, but the CLI
+        // doesn't, use the token from the config file.
+        // This is outside of fold_in! because SecretBox doesn't implement Eq.
+        if self.github_token.is_none() && toml.github_token.is_some() {
+            self.github_token = toml.github_token;
+        }
+
+        // NOTE: if you see an error within this macro call, check to make sure that
+        // that the fields provided to fold_in! match all the fields of the Config struct.
         fold_in! {
             // Destination and source configs
             self, toml;
 
-            // Keys with defaults to assign
-            accept: StatusCodeSelector::default();
-            archive: None;
-            base: None;
-            base_url: None;
-            basic_auth: None;
-            cache: false;
-            cache_exclude_status: StatusCodeExcluder::default();
-            cookie_jar: None;
-            dump: false;
-            dump_inputs: false;
-            exclude: Vec::<String>::new();
-            exclude_all_private: false;
-            exclude_file: Vec::<String>::new(); // deprecated
-            exclude_link_local: false;
-            exclude_loopback: false;
-            exclude_path: Vec::<String>::new();
-            exclude_private: false;
-            extensions: FileType::default_extensions();
-            fallback_base_url: None;
-            fallback_extensions: Vec::<String>::new();
-            format: StatsFormat::default();
-            glob_ignore_case: false;
-            header: Vec::<(String, String)>::new();
-            hidden: false;
-            include: Vec::<String>::new();
-            include_fragments: false;
-            include_mail: false;
-            include_verbatim: false;
-            include_wikilinks: false;
-            index_files: None;
-            insecure: false;
-            max_cache_age: humantime::parse_duration(DEFAULT_MAX_CACHE_AGE).unwrap();
-            max_concurrency: DEFAULT_MAX_CONCURRENCY;
-            max_redirects: DEFAULT_MAX_REDIRECTS;
-            max_retries: DEFAULT_MAX_RETRIES;
-            method: DEFAULT_METHOD;
-            min_tls: None;
-            mode: OutputMode::Color;
-            no_ignore: false;
-            no_progress: false;
-            offline: false;
-            output: None;
-            remap: Vec::<String>::new();
-            require_https: false;
-            retry_wait_time: DEFAULT_RETRY_WAIT_TIME_SECS;
-            root_dir: None;
-            scheme: Vec::<String>::new();
-            skip_missing: false;
-            suggest: false;
-            threads: None;
-            timeout: DEFAULT_TIMEOUT_SECS;
-            user_agent: DEFAULT_USER_AGENT;
-            verbose: Verbosity::default();
-        }
+            Config {
+                // Keys which are handled outside of fold_in
+                ..header,
+                ..github_token,
 
-        // If the config file has a value for the GitHub token, but the CLI
-        // doesn't, use the token from the config file.
-        if self
-            .github_token
-            .as_ref()
-            .map(ExposeSecret::expose_secret)
-            .is_none()
-            && toml
-                .github_token
-                .as_ref()
-                .map(ExposeSecret::expose_secret)
-                .is_some()
-        {
-            self.github_token = toml.github_token;
+                // Keys with defaults to assign
+                accept: StatusCodeSelector::default(),
+                archive: None,
+                base: None,
+                base_url: None,
+                basic_auth: None,
+                cache: false,
+                cache_exclude_status: StatusCodeExcluder::default(),
+                cookie_jar: None,
+                default_extension: None,
+                dump: false,
+                dump_inputs: false,
+                exclude: Vec::<String>::new(),
+                exclude_all_private: false,
+                exclude_file: Vec::<String>::new(), // deprecated
+                exclude_link_local: false,
+                exclude_loopback: false,
+                exclude_path: Vec::<String>::new(),
+                exclude_private: false,
+                extensions: FileType::default_extensions(),
+                fallback_extensions: Vec::<String>::new(),
+                format: StatsFormat::default(),
+                glob_ignore_case: false,
+                hidden: false,
+                include: Vec::<String>::new(),
+                include_fragments: false,
+                include_mail: false,
+                include_verbatim: false,
+                include_wikilinks: false,
+                index_files: None,
+                insecure: false,
+                max_cache_age: humantime::parse_duration(DEFAULT_MAX_CACHE_AGE).unwrap(),
+                max_concurrency: DEFAULT_MAX_CONCURRENCY,
+                max_redirects: DEFAULT_MAX_REDIRECTS,
+                max_retries: DEFAULT_MAX_RETRIES,
+                method: DEFAULT_METHOD,
+                min_tls: None,
+                mode: OutputMode::Color,
+                no_ignore: false,
+                no_progress: false,
+                offline: false,
+                output: None,
+                remap: Vec::<String>::new(),
+                require_https: false,
+                retry_wait_time: DEFAULT_RETRY_WAIT_TIME_SECS,
+                root_dir: None,
+                scheme: Vec::<String>::new(),
+                skip_missing: false,
+                suggest: false,
+                threads: None,
+                timeout: DEFAULT_TIMEOUT_SECS,
+                user_agent: DEFAULT_USER_AGENT,
+                verbose: Verbosity::default(),
+            }
         }
     }
 }

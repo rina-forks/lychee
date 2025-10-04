@@ -17,6 +17,7 @@
 use crate::ErrorKind;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -39,7 +40,7 @@ pub enum InputSource {
     /// Standard Input.
     Stdin,
     /// Raw string input.
-    String(String),
+    String(Cow<'static, str>),
 }
 
 impl InputSource {
@@ -79,7 +80,7 @@ pub enum ResolvedInputSource {
     /// Standard Input.
     Stdin,
     /// Raw string input.
-    String(String),
+    String(Cow<'static, str>),
 }
 
 impl From<ResolvedInputSource> for InputSource {
@@ -99,7 +100,7 @@ impl Display for ResolvedInputSource {
             Self::RemoteUrl(url) => url.as_str(),
             Self::FsPath(path) => path.to_str().unwrap_or_default(),
             Self::Stdin => "stdin",
-            Self::String(s) => s,
+            Self::String(s) => s.as_ref(),
         })
     }
 }
@@ -129,7 +130,7 @@ impl Display for InputSource {
             Self::FsGlob { pattern, .. } => pattern,
             Self::FsPath(path) => path.to_str().unwrap_or_default(),
             Self::Stdin => "stdin",
-            Self::String(s) => s,
+            Self::String(s) => s.as_ref(),
         })
     }
 }

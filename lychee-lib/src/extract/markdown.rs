@@ -10,10 +10,14 @@ use super::html::html5gum::{extract_html, extract_html_fragments};
 /// Returns the default markdown extensions used by lychee.
 /// Sadly, `|` is not const for `Options` so we can't use a const global.
 fn md_extensions() -> Options {
-    Options::ENABLE_HEADING_ATTRIBUTES | Options::ENABLE_MATH | Options::ENABLE_WIKILINKS
+    Options::ENABLE_HEADING_ATTRIBUTES
+        | Options::ENABLE_MATH
+        | Options::ENABLE_WIKILINKS
+        | Options::ENABLE_FOOTNOTES
 }
 
 /// Extract unparsed URL strings from a Markdown string.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn extract_markdown(
     input: &str,
     include_verbatim: bool,
@@ -23,6 +27,7 @@ pub(crate) fn extract_markdown(
     // which is why we keep track of entries and exits while traversing the input.
     let mut inside_code_block = false;
     let mut inside_link_block = false;
+    let mut inside_wikilink_block = false;
 
     let parser = TextMergeStream::new(Parser::new_ext(input, md_extensions()));
     parser
@@ -40,6 +45,7 @@ pub(crate) fn extract_markdown(
                     // Inline link like `[foo](bar)`
                     // This is the most common link type
                     LinkType::Inline => {
+                        inside_link_block = true;
                         Some(vec![RawUri {
                             text: dest_url.to_string(),
                             // Emulate `<a href="...">` tag here to be compatible with
@@ -60,7 +66,16 @@ pub(crate) fn extract_markdown(
                     // Shortcut link like `[foo]`
                     LinkType::Shortcut |
                     // Shortcut without destination in the document, but resolved by the `broken_link_callback`
-                    LinkType::ShortcutUnknown |
+                    LinkType::ShortcutUnknown => {
+                        inside_link_block = true;
+                        // For reference links, create RawUri directly to handle relative file paths
+                        // that linkify doesn't recognize as URLs
+                        Some(vec![RawUri {
+                            text: dest_url.to_string(),
+                            element: Some("a".to_string()),
+                            attribute: Some("href".to_string()),
+                        }])
+                    },
                     // Autolink like `<http://foo.bar/baz>`
                     LinkType::Autolink |
                     // Email address in autolink like `<john@example.org>`
@@ -72,7 +87,7 @@ pub(crate) fn extract_markdown(
                         if !include_wikilinks {
                             return None;
                         }
-                        inside_link_block = true;
+                        inside_wikilink_block = true;
                         //Ignore gitlab toc notation: https://docs.gitlab.com/user/markdown/#table-of-contents
                         if ["_TOC_".to_string(), "TOC".to_string()].contains(&dest_url.to_string()) {
                             return None;
@@ -111,7 +126,9 @@ pub(crate) fn extract_markdown(
 
             // A text node.
             Event::Text(txt) => {
-                if (inside_code_block && !include_verbatim) || inside_link_block {
+                if inside_wikilink_block
+                    || (inside_link_block && !include_verbatim)
+                    || (inside_code_block && !include_verbatim) {
                     None
                 } else {
                     Some(extract_raw_uri_from_plaintext(&txt))
@@ -137,8 +154,18 @@ pub(crate) fn extract_markdown(
             // A detected link block.
             Event::End(TagEnd::Link) => {
                 inside_link_block = false;
+                inside_wikilink_block = false;
                 None
             }
+
+            // Skip footnote references and definitions - they're not links to check
+            // Note: These are kept explicit (rather than relying on the wildcard) for clarity
+            #[allow(clippy::match_same_arms)]
+            Event::FootnoteReference(_) => None,
+            #[allow(clippy::match_same_arms)]
+            Event::Start(Tag::FootnoteDefinition(_)) => None,
+            #[allow(clippy::match_same_arms)]
+            Event::End(TagEnd::FootnoteDefinition) => None,
 
             // Silently skip over other events
             _ => None,
@@ -438,5 +465,112 @@ $$
         let markdown = r"[[_TOC_]][TOC]";
         let uris = extract_markdown(markdown, true, true);
         assert!(uris.is_empty());
+    }
+
+    #[test]
+    fn test_link_text_not_checked() {
+        // Test that link text is not extracted as a separate link by default
+        let markdown =
+            r"[https://lycheerepublic.gov/notexist (archive.org link)](https://example.com)";
+        let uris = extract_markdown(markdown, false, false);
+
+        // Should only extract the destination URL, not the link text
+        let expected = vec![RawUri {
+            text: "https://example.com".to_string(),
+            element: Some("a".to_string()),
+            attribute: Some("href".to_string()),
+        }];
+
+        assert_eq!(uris, expected);
+        assert_eq!(
+            uris.len(),
+            1,
+            "Should only find destination URL, not link text"
+        );
+    }
+
+    #[test]
+    fn test_link_text_checked_with_include_verbatim() {
+        // Test that link text IS extracted when include_verbatim is true
+        let markdown =
+            r"[https://lycheerepublic.gov/notexist (archive.org link)](https://example.com)";
+        let uris = extract_markdown(markdown, true, false);
+
+        // Should extract both the link text AND the destination URL
+        let expected = vec![
+            RawUri {
+                text: "https://example.com".to_string(),
+                element: Some("a".to_string()),
+                attribute: Some("href".to_string()),
+            },
+            RawUri {
+                text: "https://lycheerepublic.gov/notexist".to_string(),
+                element: None,
+                attribute: None,
+            },
+        ];
+
+        assert_eq!(
+            uris.len(),
+            2,
+            "Should find both destination URL and link text"
+        );
+        // Check that both expected URLs are present (order might vary)
+        for expected_uri in expected {
+            assert!(
+                uris.contains(&expected_uri),
+                "Missing expected URI: {expected_uri:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reference_links_extraction() {
+        // Test that all types of reference links are extracted correctly
+        let markdown = r"
+Inline link: [link1](target1.md)
+
+Reference link: [link2][ref2]
+Collapsed link: [link3][]
+Shortcut link: [link4]
+
+[ref2]: target2.md
+[link3]: target3.md
+[link4]: target4.md
+";
+        let uris = extract_markdown(markdown, false, false);
+
+        let expected = vec![
+            RawUri {
+                text: "target1.md".to_string(),
+                element: Some("a".to_string()),
+                attribute: Some("href".to_string()),
+            },
+            RawUri {
+                text: "target2.md".to_string(),
+                element: Some("a".to_string()),
+                attribute: Some("href".to_string()),
+            },
+            RawUri {
+                text: "target3.md".to_string(),
+                element: Some("a".to_string()),
+                attribute: Some("href".to_string()),
+            },
+            RawUri {
+                text: "target4.md".to_string(),
+                element: Some("a".to_string()),
+                attribute: Some("href".to_string()),
+            },
+        ];
+
+        assert_eq!(uris.len(), 4, "Should extract all four link types");
+
+        // Check that all expected URIs are present (order might vary)
+        for expected_uri in expected {
+            assert!(
+                uris.contains(&expected_uri),
+                "Missing expected URI: {expected_uri:?}. Found: {uris:?}"
+            );
+        }
     }
 }

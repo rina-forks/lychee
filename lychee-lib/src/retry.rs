@@ -87,7 +87,7 @@ impl RetryExt for http::Error {
         let inner = self.get_ref();
         inner
             .source()
-            .and_then(<(dyn std::error::Error + 'static)>::downcast_ref)
+            .and_then(<dyn std::error::Error + 'static>::downcast_ref)
             .is_some_and(should_retry_io)
     }
 }
@@ -121,7 +121,7 @@ impl RetryExt for Status {
             Status::Ok(_) => false,
             Status::Error(err) => err.should_retry(),
             Status::Timeout(_) => true,
-            Status::Redirected(_) => false,
+            Status::Redirected(_, _) => false,
             Status::UnknownStatusCode(_) => false,
             Status::Excluded => false,
             Status::Unsupported(_) => false,

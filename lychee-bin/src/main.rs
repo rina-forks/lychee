@@ -84,6 +84,7 @@ use lychee_lib::CookieJar;
 mod cache;
 mod client;
 mod commands;
+mod files_from;
 mod formatters;
 mod options;
 mod parse;
@@ -91,7 +92,6 @@ mod stats;
 mod time;
 mod verbosity;
 
-use crate::formatters::color;
 use crate::formatters::duration::Duration;
 use crate::{
     cache::{Cache, StoreExt},
@@ -209,10 +209,10 @@ fn load_cookie_jar(cfg: &Config) -> Result<Option<CookieJar>> {
     }
 }
 
-#[must_use]
 /// Load cache (if exists and is still valid)
 /// This returns an `Option` as starting without a cache is a common scenario
 /// and we silently discard errors on purpose
+#[must_use]
 fn load_cache(cfg: &Config) -> Option<Cache> {
     if !cfg.cache {
         return None;
@@ -245,7 +245,11 @@ fn load_cache(cfg: &Config) -> Option<Cache> {
         }
     }
 
-    let cache = Cache::load(LYCHEE_CACHE_FILE, cfg.max_cache_age.as_secs());
+    let cache = Cache::load(
+        LYCHEE_CACHE_FILE,
+        cfg.max_cache_age.as_secs(),
+        &cfg.cache_exclude_status,
+    );
     match cache {
         Ok(cache) => Some(cache),
         Err(e) => {

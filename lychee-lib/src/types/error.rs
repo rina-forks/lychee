@@ -70,9 +70,9 @@ pub enum ErrorKind {
     #[error("Cannot find fragment")]
     InvalidFragment(Uri),
 
-    /// The given directory is missing a required index file
+    /// Cannot resolve local directory link using the configured index files
     #[error("Cannot find index file within directory")]
-    InvalidIndexFile(PathBuf),
+    InvalidIndexFile(Vec<String>),
 
     /// The given path cannot be converted to a URI
     #[error("Invalid path to URL conversion: {0}")]
@@ -157,10 +157,6 @@ pub enum ErrorKind {
     /// Regex error
     #[error("Error when using regex engine: {0}")]
     Regex(#[from] regex::Error),
-
-    /// Too many redirects (HTTP 3xx) were encountered (configurable)
-    #[error("Too many redirects")]
-    TooManyRedirects(#[source] reqwest::Error),
 
     /// Basic auth extractor error
     #[error("Basic auth extractor error")]
@@ -325,9 +321,6 @@ impl ErrorKind {
             ErrorKind::Regex(error) => Some(format!(
                 "Regular expression error: {error}. Check regex syntax",
             )),
-            ErrorKind::TooManyRedirects(_error) => Some(
-                "Too many redirects. Check for redirect loops or increase redirect limit".to_string()
-            ),
             ErrorKind::BasicAuthExtractorError(basic_auth_extractor_error) => Some(format!(
                 "Basic authentication error: {basic_auth_extractor_error}. Check credentials format",
             )),
@@ -337,9 +330,11 @@ impl ErrorKind {
             ErrorKind::StatusCodeSelectorError(status_code_selector_error) => Some(format!(
                 "Status code selector error: {status_code_selector_error}. Check accept configuration",
             )),
-            ErrorKind::InvalidIndexFile(_path) => Some(
-                "Index file not found in directory. Check if index.html or other index files exist".to_string()
-            ),
+            ErrorKind::InvalidIndexFile(index_files) => match &index_files[..] {
+                [] => "No directory links are allowed because index_files is defined and empty".to_string(),
+                [name] => format!("An index file ({name}) is required"),
+                [init @ .., tail] => format!("An index file ({}, or {}) is required", init.join(", "), tail),
+            }.into()
         }
     }
 
@@ -402,9 +397,6 @@ impl PartialEq for ErrorKind {
             (Self::Regex(e1), Self::Regex(e2)) => e1.to_string() == e2.to_string(),
             (Self::DirTraversal(e1), Self::DirTraversal(e2)) => e1.to_string() == e2.to_string(),
             (Self::Channel(_), Self::Channel(_)) => true,
-            (Self::TooManyRedirects(e1), Self::TooManyRedirects(e2)) => {
-                e1.to_string() == e2.to_string()
-            }
             (Self::BasicAuthExtractorError(e1), Self::BasicAuthExtractorError(e2)) => {
                 e1.to_string() == e2.to_string()
             }
@@ -417,6 +409,7 @@ impl PartialEq for ErrorKind {
             (Self::InvalidBase(b1, e1), Self::InvalidBase(b2, e2)) => b1 == b2 && e1 == e2,
             (Self::InvalidUrlRemap(r1), Self::InvalidUrlRemap(r2)) => r1 == r2,
             (Self::EmptyUrl, Self::EmptyUrl) => true,
+            (Self::RejectedStatusCode(c1), Self::RejectedStatusCode(c2)) => c1 == c2,
             #[cfg(any(test, debug_assertions))]
             (Self::TestError, Self::TestError) => true,
 
@@ -474,7 +467,6 @@ impl Hash for ErrorKind {
                 std::mem::discriminant(self).hash(state);
             }
             Self::Regex(e) => e.to_string().hash(state),
-            Self::TooManyRedirects(e) => e.to_string().hash(state),
             Self::BasicAuthExtractorError(e) => e.to_string().hash(state),
             Self::Cookies(e) => e.to_string().hash(state),
             Self::StatusCodeSelectorError(e) => e.to_string().hash(state),

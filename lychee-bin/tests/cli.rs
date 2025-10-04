@@ -1,16 +1,7 @@
 #[cfg(test)]
 mod cli {
-    use std::{
-        collections::{HashMap, HashSet},
-        error::Error,
-        fs::{self, File},
-        io::{BufRead, Write},
-        path::{Path, PathBuf},
-        time::Duration,
-    };
-
     use anyhow::anyhow;
-    use assert_cmd::{Command, assert::Assert};
+    use assert_cmd::{Command, assert::Assert, output::OutputOkExt};
     use assert_json_diff::assert_json_include;
     use http::{Method, StatusCode};
     use lychee_lib::{InputSource, ResponseBody};
@@ -22,7 +13,17 @@ mod cli {
     use regex::Regex;
     use serde::Serialize;
     use serde_json::Value;
+    use std::{
+        collections::{HashMap, HashSet},
+        error::Error,
+        fs::{self, File},
+        io::{BufRead, Write},
+        path::{Path, PathBuf},
+        time::Duration,
+    };
     use tempfile::NamedTempFile;
+    use test_utils::{mock_server, redirecting_mock_server};
+
     use uuid::Uuid;
     use wiremock::{
         Mock, ResponseTemplate,
@@ -35,17 +36,6 @@ mod cli {
     // Since it is currently static and can't be overwritten, declare it as a
     // constant.
     const LYCHEE_CACHE_FILE: &str = ".lycheecache";
-
-    /// Create a mock server which returns a custom status code.
-    macro_rules! mock_server {
-        ($status:expr $(, $func:tt ($($arg:expr),*))*) => {{
-            let mock_server = wiremock::MockServer::start().await;
-            let response_template = wiremock::ResponseTemplate::new(http::StatusCode::from($status));
-            let template = response_template$(.$func($($arg),*))*;
-            wiremock::Mock::given(wiremock::matchers::method("GET")).respond_with(template).mount(&mock_server).await;
-            mock_server
-        }};
-    }
 
     /// Create a mock server which returns a 200 OK and a custom response body.
     macro_rules! mock_response {
@@ -1456,7 +1446,11 @@ mod cli {
         cmd.arg(&test_path).assert().success();
 
         let mut cmd = main_command();
-        cmd.arg("--require-https").arg(test_path).assert().failure();
+        cmd.arg("--require-https")
+            .arg(test_path)
+            .assert()
+            .failure()
+            .stdout(contains("This URI is available in HTTPS protocol, but HTTP is provided. Use 'https://example.com/' instead"));
 
         Ok(())
     }
@@ -2234,21 +2228,62 @@ mod cli {
         let mock_server = mock_server!(StatusCode::OK);
         let config = fixtures_path().join("configs").join("format.toml");
         let mut cmd = main_command();
-        cmd.arg("--config")
+        let output = cmd
+            .arg("--config")
             .arg(config)
             .arg("-")
             .write_stdin(mock_server.uri())
             .env_clear()
             .assert()
-            .success();
+            .success()
+            .get_output()
+            .clone()
+            .unwrap();
 
         // Check that the output is in JSON format
-        let output = cmd.output().unwrap();
         let output = std::str::from_utf8(&output.stdout).unwrap();
         let json: serde_json::Value = serde_json::from_str(output)?;
         assert_eq!(json["total"], 1);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_redirect_json() {
+        use serde_json::json;
+        redirecting_mock_server!(async |redirect_url: Url, ok_url| {
+            let mut cmd = main_command();
+            let output = cmd
+                .arg("-")
+                .arg("--format")
+                .arg("json")
+                .write_stdin(redirect_url.as_str())
+                .env_clear()
+                .assert()
+                .success()
+                .get_output()
+                .clone()
+                .unwrap();
+
+            // Check that the output is in JSON format
+            let output = std::str::from_utf8(&output.stdout).unwrap();
+            let json: serde_json::Value = serde_json::from_str(output).unwrap();
+            assert_eq!(json["total"], 1);
+            assert_eq!(json["redirects"], 1);
+            assert_eq!(
+                json["redirect_map"],
+                json!({
+                "stdin":[{
+                    "status": {
+                        "code": 200,
+                        "text": "Redirect",
+                        "redirects": [ redirect_url, ok_url ]
+                    },
+                    "url": redirect_url
+                }]})
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -2511,12 +2546,12 @@ mod cli {
     fn test_index_files_specified() {
         let input = fixtures_path().join("filechecker/dir_links.md");
 
-        // passing `--index-files index.html` should reject all links
+        // passing `--index-files index.html,index.htm` should reject all links
         // to /empty_dir because it doesn't have the index file
         let result = main_command()
-            .arg(input)
+            .arg(&input)
             .arg("--index-files")
-            .arg("index.html")
+            .arg("index.html,index.htm")
             .arg("--verbose")
             .assert()
             .failure();
@@ -2526,7 +2561,18 @@ mod cli {
         result
             .stdout(contains("Cannot find index file").count(empty_dir_links))
             .stdout(contains("/empty_dir").count(empty_dir_links))
+            .stdout(contains("(index.html, or index.htm)").count(empty_dir_links))
             .stdout(contains(format!("{index_dir_links} OK")));
+
+        // within the error message, formatting of the index file name list should
+        // omit empty names.
+        main_command()
+            .arg(&input)
+            .arg("--index-files")
+            .arg(",index.html,,,index.htm,")
+            .assert()
+            .failure()
+            .stdout(contains("(index.html, or index.htm)").count(empty_dir_links));
     }
 
     #[test]
@@ -2566,7 +2612,7 @@ mod cli {
         // passing an empty list to --index-files should reject /all/
         // directory links.
         let result = main_command()
-            .arg(input)
+            .arg(&input)
             .arg("--index-files")
             .arg("")
             .assert()
@@ -2575,6 +2621,17 @@ mod cli {
         let num_dir_links = 4;
         result
             .stdout(contains("Cannot find index file").count(num_dir_links))
+            .stdout(contains("No directory links are allowed").count(num_dir_links))
+            .stdout(contains("0 OK"));
+
+        // ... as should passing a number of empty index file names
+        main_command()
+            .arg(&input)
+            .arg("--index-files")
+            .arg(",,,,,")
+            .assert()
+            .failure()
+            .stdout(contains("No directory links are allowed").count(num_dir_links))
             .stdout(contains("0 OK"));
     }
 
@@ -2738,5 +2795,172 @@ mod cli {
             .success()
             .stderr("") // Ensure stderr is empty
             .stdout(contains("https://example.com/sitemap.xml"));
+    }
+
+    #[test]
+    fn test_files_from_file() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let files_list_path = temp_dir.path().join("files.txt");
+        let test_md = temp_dir.path().join("test.md");
+
+        // Create test files
+        fs::write(&test_md, "# Test\n[link](https://example.com)")?;
+        fs::write(&files_list_path, test_md.to_string_lossy().as_ref())?;
+
+        let mut cmd = main_command();
+        cmd.arg("--files-from")
+            .arg(&files_list_path)
+            .arg("--dump-inputs")
+            .assert()
+            .success()
+            .stdout(contains(test_md.to_string_lossy().as_ref()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_files_from_stdin() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let test_md = temp_dir.path().join("test.md");
+
+        // Create test file
+        fs::write(&test_md, "# Test\n[link](https://example.com)")?;
+
+        let mut cmd = main_command();
+        cmd.arg("--files-from")
+            .arg("-")
+            .arg("--dump-inputs")
+            .write_stdin(test_md.to_string_lossy().as_ref())
+            .assert()
+            .success()
+            .stdout(contains(test_md.to_string_lossy().as_ref()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_files_from_with_comments_and_empty_lines() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let files_list_path = temp_dir.path().join("files.txt");
+        let test_md = temp_dir.path().join("test.md");
+
+        // Create test files
+        fs::write(&test_md, "# Test\n[link](https://example.com)")?;
+        fs::write(
+            &files_list_path,
+            format!(
+                "# Comment line\n\n{}\n# Another comment\n",
+                test_md.display()
+            ),
+        )?;
+
+        let mut cmd = main_command();
+        cmd.arg("--files-from")
+            .arg(&files_list_path)
+            .arg("--dump-inputs")
+            .assert()
+            .success()
+            .stdout(contains(test_md.to_string_lossy().as_ref()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_files_from_combined_with_regular_inputs() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let files_list_path = temp_dir.path().join("files.txt");
+        let test_md1 = temp_dir.path().join("test1.md");
+        let test_md2 = temp_dir.path().join("test2.md");
+
+        // Create test files
+        fs::write(&test_md1, "# Test 1")?;
+        fs::write(&test_md2, "# Test 2")?;
+        fs::write(&files_list_path, test_md1.to_string_lossy().as_ref())?;
+
+        let mut cmd = main_command();
+        cmd.arg("--files-from")
+            .arg(&files_list_path)
+            .arg(&test_md2) // Regular input argument
+            .arg("--dump-inputs")
+            .assert()
+            .success()
+            .stdout(contains(test_md1.to_string_lossy().as_ref()))
+            .stdout(contains(test_md2.to_string_lossy().as_ref()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_files_from_nonexistent_file_error() -> Result<()> {
+        let mut cmd = main_command();
+        cmd.arg("--files-from")
+            .arg("/nonexistent/file.txt")
+            .arg("--dump-inputs")
+            .assert()
+            .failure()
+            .stderr(contains("Cannot open --files-from file"));
+
+        Ok(())
+    }
+
+    /// Test the --default-extension option for files without extensions
+    #[test]
+    fn test_default_extension_option() -> Result<()> {
+        let mut file_without_ext = NamedTempFile::new()?;
+        // Create markdown content but with no file extension
+        writeln!(file_without_ext, "# Test File")?;
+        writeln!(file_without_ext, "[Example](https://example.com)")?;
+        writeln!(file_without_ext, "[Local](local.md)")?;
+
+        // Test with --default-extension md
+        main_command()
+            .arg("--default-extension")
+            .arg("md")
+            .arg("--dump")
+            .arg(file_without_ext.path())
+            .assert()
+            .success()
+            .stdout(contains("https://example.com"));
+
+        let mut html_file_without_ext = NamedTempFile::new()?;
+        // Create HTML content but with no file extension
+        writeln!(html_file_without_ext, "<html><body>")?;
+        writeln!(
+            html_file_without_ext,
+            "<a href=\"https://html-example.com\">HTML Link</a>"
+        )?;
+        writeln!(html_file_without_ext, "</body></html>")?;
+
+        // Test with --default-extension html
+        main_command()
+            .arg("--default-extension")
+            .arg("html")
+            .arg("--dump")
+            .arg(html_file_without_ext.path())
+            .assert()
+            .success()
+            .stdout(contains("https://html-example.com"));
+
+        Ok(())
+    }
+
+    /// Test that unknown --default-extension values are handled gracefully
+    #[test]
+    fn test_default_extension_unknown_value() {
+        let mut file_without_ext = NamedTempFile::new().unwrap();
+        // Create file content with a link that should be extracted as plaintext
+        writeln!(file_without_ext, "# Test").unwrap();
+        writeln!(file_without_ext, "Visit https://example.org for more info").unwrap();
+
+        // Unknown extensions should fall back to default behavior (plaintext)
+        // and still extract links from the content
+        main_command()
+            .arg("--default-extension")
+            .arg("unknown")
+            .arg("--dump")
+            .arg(file_without_ext.path())
+            .assert()
+            .success()
+            .stdout(contains("https://example.org")); // Should extract the link as plaintext
     }
 }

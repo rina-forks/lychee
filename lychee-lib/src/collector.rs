@@ -303,7 +303,9 @@ impl Collector {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::{collections::HashSet, convert::TryFrom, fs::File, io::Write};
+    use test_utils::{fixtures_path, load_fixture, mail, mock_server, path, website};
 
     use http::StatusCode;
     use reqwest::Url;
@@ -312,8 +314,6 @@ mod tests {
     use crate::{
         Result, Uri,
         filter::PathExcludes,
-        mock_server,
-        test_utils::{load_fixture, mail, path, website},
         types::{FileType, Input, InputSource},
     };
 
@@ -450,7 +450,7 @@ mod tests {
         let mock_server = mock_server!(StatusCode::OK, set_body_string(TEST_URL));
 
         let inputs = HashSet::from_iter([
-            Input::from_input_source(InputSource::String(TEST_STRING.to_owned())),
+            Input::from_input_source(InputSource::String(Cow::Borrowed(TEST_STRING))),
             Input::from_input_source(InputSource::RemoteUrl(Box::new(
                 Url::parse(&mock_server.uri())
                     .map_err(|e| (mock_server.uri(), e))
@@ -469,11 +469,11 @@ mod tests {
             .unwrap();
 
         let expected_links = HashSet::from_iter([
-            website(TEST_STRING),
-            website(TEST_URL),
-            website(TEST_FILE),
-            website(TEST_GLOB_1),
-            mail(TEST_GLOB_2_MAIL),
+            website!(TEST_STRING),
+            website!(TEST_URL),
+            website!(TEST_FILE),
+            website!(TEST_GLOB_1),
+            mail!(TEST_GLOB_2_MAIL),
         ]);
 
         assert_eq!(links, expected_links);
@@ -485,7 +485,9 @@ mod tests {
     async fn test_collect_markdown_links() {
         let base = Base::try_from("https://github.com/hello-rust/lychee/").unwrap();
         let input = Input {
-            source: InputSource::String("This is [a test](https://endler.dev). This is a relative link test [Relative Link Test](relative_link)".to_string()),
+            source: InputSource::String(Cow::Borrowed(
+                "This is [a test](https://endler.dev). This is a relative link test [Relative Link Test](relative_link)",
+            )),
             file_type_hint: Some(FileType::Markdown),
         };
         let inputs = HashSet::from_iter([input]);
@@ -493,8 +495,8 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            website("https://endler.dev"),
-            website("https://github.com/hello-rust/lychee/relative_link"),
+            website!("https://endler.dev"),
+            website!("https://github.com/hello-rust/lychee/relative_link"),
         ]);
 
         assert_eq!(links, expected_links);
@@ -504,15 +506,14 @@ mod tests {
     async fn test_collect_html_links() {
         let base = Base::try_from("https://github.com/lycheeverse/").unwrap();
         let input = Input {
-            source: InputSource::String(
+            source: InputSource::String(Cow::Borrowed(
                 r#"<html>
                 <div class="row">
                     <a href="https://github.com/lycheeverse/lychee/">
                     <a href="blob/master/README.md">README</a>
                 </div>
-            </html>"#
-                    .to_string(),
-            ),
+            </html>"#,
+            )),
             file_type_hint: Some(FileType::Html),
         };
         let inputs = HashSet::from_iter([input]);
@@ -520,8 +521,8 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            website("https://github.com/lycheeverse/lychee/"),
-            website("https://github.com/lycheeverse/blob/master/README.md"),
+            website!("https://github.com/lycheeverse/lychee/"),
+            website!("https://github.com/lycheeverse/blob/master/README.md"),
         ]);
 
         assert_eq!(links, expected_links);
@@ -531,7 +532,7 @@ mod tests {
     async fn test_collect_html_srcset() {
         let base = Base::try_from("https://example.com/").unwrap();
         let input = Input {
-            source: InputSource::String(
+            source: InputSource::String(Cow::Borrowed(
                 r#"
             <img
                 src="/static/image.png"
@@ -540,9 +541,8 @@ mod tests {
                 /static/image600.png  600w,
                 "
             />
-          "#
-                .to_string(),
-            ),
+          "#,
+            )),
             file_type_hint: Some(FileType::Html),
         };
         let inputs = HashSet::from_iter([input]);
@@ -550,9 +550,9 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            website("https://example.com/static/image.png"),
-            website("https://example.com/static/image300.png"),
-            website("https://example.com/static/image600.png"),
+            website!("https://example.com/static/image.png"),
+            website!("https://example.com/static/image300.png"),
+            website!("https://example.com/static/image600.png"),
         ]);
 
         assert_eq!(links, expected_links);
@@ -563,13 +563,12 @@ mod tests {
         let base = Base::try_from("https://localhost.com/").unwrap();
 
         let input = Input {
-            source: InputSource::String(
+            source: InputSource::String(Cow::Borrowed(
                 "This is [an internal url](@/internal.md)
         This is [an internal url](@/internal.markdown)
         This is [an internal url](@/internal.markdown#example)
-        This is [an internal url](@/internal.md#example)"
-                    .to_string(),
-            ),
+        This is [an internal url](@/internal.md#example)",
+            )),
             file_type_hint: Some(FileType::Markdown),
         };
         let inputs = HashSet::from_iter([input]);
@@ -577,10 +576,10 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected = HashSet::from_iter([
-            website("https://localhost.com/@/internal.md"),
-            website("https://localhost.com/@/internal.markdown"),
-            website("https://localhost.com/@/internal.md#example"),
-            website("https://localhost.com/@/internal.markdown#example"),
+            website!("https://localhost.com/@/internal.md"),
+            website!("https://localhost.com/@/internal.markdown"),
+            website!("https://localhost.com/@/internal.md#example"),
+            website!("https://localhost.com/@/internal.markdown#example"),
         ]);
 
         assert_eq!(links, expected);
@@ -589,10 +588,10 @@ mod tests {
     #[tokio::test]
     async fn test_extract_html5_not_valid_xml_relative_links() {
         let base = Base::try_from("https://example.com").unwrap();
-        let input = load_fixture("TEST_HTML5.html");
+        let input = load_fixture!("TEST_HTML5.html");
 
         let input = Input {
-            source: InputSource::String(input),
+            source: InputSource::String(Cow::Owned(input)),
             file_type_hint: Some(FileType::Html),
         };
         let inputs = HashSet::from_iter([input]);
@@ -601,12 +600,12 @@ mod tests {
 
         let expected_links = HashSet::from_iter([
             // the body links wouldn't be present if the file was parsed strictly as XML
-            website("https://example.com/body/a"),
-            website("https://example.com/body/div_empty_a"),
-            website("https://example.com/css/style_full_url.css"),
-            website("https://example.com/css/style_relative_url.css"),
-            website("https://example.com/head/home"),
-            website("https://example.com/images/icon.png"),
+            website!("https://example.com/body/a"),
+            website!("https://example.com/body/div_empty_a"),
+            website!("https://example.com/css/style_full_url.css"),
+            website!("https://example.com/css/style_relative_url.css"),
+            website!("https://example.com/head/home"),
+            website!("https://example.com/images/icon.png"),
         ]);
 
         assert_eq!(links, expected_links);
@@ -631,8 +630,8 @@ mod tests {
         let links = collect(inputs, None, None).await.ok().unwrap();
 
         let expected_urls = HashSet::from_iter([
-            website("https://github.com/lycheeverse/lychee/"),
-            website(&format!("{server_uri}about")),
+            website!("https://github.com/lycheeverse/lychee/"),
+            website!(&format!("{server_uri}about")),
         ]);
 
         assert_eq!(links, expected_urls);
@@ -640,15 +639,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_email_with_query_params() {
-        let input = Input::from_input_source(InputSource::String(
-            "This is a mailto:user@example.com?subject=Hello link".to_string(),
-        ));
+        let input = Input::from_input_source(InputSource::String(Cow::Borrowed(
+            "This is a mailto:user@example.com?subject=Hello link",
+        )));
 
         let inputs = HashSet::from_iter([input]);
 
         let links = collect(inputs, None, None).await.ok().unwrap();
 
-        let expected_links = HashSet::from_iter([mail("user@example.com")]);
+        let expected_links = HashSet::from_iter([mail!("user@example.com")]);
 
         assert_eq!(links, expected_links);
     }
@@ -690,11 +689,11 @@ mod tests {
         let links = collect(inputs, None, None).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            website(&format!(
+            website!(&format!(
                 "{}/foo/relative.html",
                 mock_server_1.uri().trim_end_matches('/')
             )),
-            website(&format!(
+            website!(&format!(
                 "{}/bar/relative.html",
                 mock_server_2.uri().trim_end_matches('/')
             )),
@@ -708,14 +707,13 @@ mod tests {
         let base = Base::try_from("https://example.com/a/").unwrap();
 
         let input = Input {
-            source: InputSource::String(
+            source: InputSource::String(Cow::Borrowed(
                 r#"
                 <a href="index.html">Index</a>
                 <a href="about.html">About</a>
                 <a href="/another.html">Another</a>
-            "#
-                .into(),
-            ),
+            "#,
+            )),
             file_type_hint: Some(FileType::Html),
         };
 
@@ -724,9 +722,9 @@ mod tests {
         let links = collect(inputs, None, Some(base)).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
-            website("https://example.com/a/index.html"),
-            website("https://example.com/a/about.html"),
-            website("https://example.com/another.html"),
+            website!("https://example.com/a/index.html"),
+            website!("https://example.com/a/about.html"),
+            website!("https://example.com/another.html"),
         ]);
 
         assert_eq!(links, expected_links);
