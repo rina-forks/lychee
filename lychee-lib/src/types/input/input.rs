@@ -206,32 +206,32 @@ impl Input {
                 match source_result {
                     Ok(source) => {
                         let content_result = match source {
-                            ResolvedInputSource::FsPath(path) => {
-                                Self::path_content(&path).await
-                            },
-                            ResolvedInputSource::RemoteUrl(url) => {
-                                resolver.url_contents(*url).await
-                            },
-                            ResolvedInputSource::Stdin => {
-                                Self::stdin_content(self.file_type_hint).await
-                            },
-                            ResolvedInputSource::String(s) => {
-                                Ok(Self::string_content(&s, self.file_type_hint))
-                            },
+                            ResolvedInputSource::FsPath(path) => Self::path_content(&path).await,
+                            ResolvedInputSource::RemoteUrl(_)
+                            | ResolvedInputSource::Stdin
+                            | ResolvedInputSource::String(_) => {
+                                unreachable!(
+                                    "input source kind should be handled by earlier 'simple cases'"
+                                )
+                            }
                         };
 
                         match content_result {
                             Err(_) if skip_missing => (),
-                            Err(e) if matches!(&e, ErrorKind::ReadFileInput(io_err, _) if io_err.kind() == std::io::ErrorKind::InvalidData) => {
+                            Err(e) if matches!(&e, ErrorKind::ReadFileInput(io_err, _) if io_err.kind() == std::io::ErrorKind::InvalidData) =>
+                            {
                                 // If the file contains invalid UTF-8 (e.g. binary), we skip it
                                 if let ErrorKind::ReadFileInput(_, path) = &e {
-                                    log::warn!("Skipping file with invalid UTF-8 content: {}", path.display());
+                                    log::warn!(
+                                        "Skipping file with invalid UTF-8 content: {}",
+                                        path.display()
+                                    );
                                 }
-                            },
+                            }
                             Err(e) => Err(e)?,
                             Ok(content) => yield content,
                         }
-                    },
+                    }
                     Err(e) => Err(e)?,
                 }
             }
