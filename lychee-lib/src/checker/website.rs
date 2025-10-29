@@ -265,6 +265,7 @@ impl WebsiteChecker {
 
         if let Ok(github_uri) = GithubUri::try_from(uri) {
             let status = self.check_github(github_uri).await;
+            println!("check github {:?}", status);
             if status.is_success() {
                 return status;
             }
@@ -284,6 +285,15 @@ impl WebsiteChecker {
     /// A better approach would be to download the file through the API or
     /// clone the repo, but we chose the pragmatic approach.
     async fn check_github(&self, uri: GithubUri) -> Status {
+        println!("{:?}", self.github_client);
+        let _ = match &self.github_client {
+            Some(client) => {
+                println!("{:?}", client._get("/octocat").await
+                    .unwrap().status());
+                Some(client)
+            }
+            None => None
+        };
         let Some(client) = &self.github_client else {
             return ErrorKind::MissingGitHubToken.into();
         };

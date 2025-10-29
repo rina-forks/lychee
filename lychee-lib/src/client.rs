@@ -377,17 +377,21 @@ impl ClientBuilder {
         .build()
         .map_err(ErrorKind::BuildRequestClient)?;
 
-        let github_client = match self.github_token.as_ref().map(ExposeSecret::expose_secret) {
-            Some(token) if !token.is_empty() => Some(
+        let github_client = match self.github_token {
+            Some(token) => {
+                println!("tok {:?}", token);
+                Some(
                 Octocrab::builder()
-                    .personal_token(token.to_string())
                     .build()
                     // this is essentially the same `reqwest::ClientBuilder::build` error
                     // see https://docs.rs/octocrab/0.18.1/src/octocrab/lib.rs.html#360-364
-                    .map_err(|e: octocrab::Error| ErrorKind::BuildGithubClient(Box::new(e)))?,
-            ),
+                    .and_then(|x| x.user_access_token(token))
+                    .map_err(|e: octocrab::Error| ErrorKind::BuildGithubClient(Box::new(e)))?
+            )
+            },
             _ => None,
         };
+        println!("{:?}", github_client);
 
         let filter = Filter {
             includes: self.includes.map(Into::into),
