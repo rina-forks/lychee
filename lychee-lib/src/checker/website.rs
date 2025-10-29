@@ -304,6 +304,7 @@ impl WebsiteChecker {
         if let Some(true) = repo.private {
             return Status::Ok(StatusCode::OK);
         } else if let Some(endpoint) = uri.endpoint {
+            println!("has endpoint");
             return ErrorKind::InvalidGithubUrl(format!("{}/{}/{endpoint}", uri.owner, uri.repo))
                 .into();
         }

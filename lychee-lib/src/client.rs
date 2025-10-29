@@ -382,10 +382,11 @@ impl ClientBuilder {
                 println!("tok {:?}", token);
                 Some(
                 Octocrab::builder()
+                    .personal_token(ExposeSecret::expose_secret(&token))
                     .build()
                     // this is essentially the same `reqwest::ClientBuilder::build` error
                     // see https://docs.rs/octocrab/0.18.1/src/octocrab/lib.rs.html#360-364
-                    .and_then(|x| x.user_access_token(token))
+                    // .and_then(|x| x.user_access_token(token))
                     .map_err(|e: octocrab::Error| ErrorKind::BuildGithubClient(Box::new(e)))?
             )
             },

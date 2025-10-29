@@ -64,6 +64,7 @@ impl GithubUri {
         debug_assert!(!uri.is_mail(), "Should only be called on a Website type!");
 
         let Some(domain) = uri.domain() else {
+            println!("no domain");
             return Err(ErrorKind::InvalidGithubUrl(uri.to_string()));
         };
 
@@ -71,12 +72,17 @@ impl GithubUri {
             domain,
             "github.com" | "www.github.com" | "raw.githubusercontent.com"
         ) {
+            println!("incorrect domain");
             return Err(ErrorKind::InvalidGithubUrl(uri.to_string()));
         }
 
         let parts: Vec<_> = match uri.path_segments() {
             Some(parts) => parts.collect(),
-            None => return Err(ErrorKind::InvalidGithubUrl(uri.to_string())),
+            None => {
+
+            println!("bad segments");
+                return Err(ErrorKind::InvalidGithubUrl(uri.to_string()))
+            }
         };
 
         if parts.len() < 2 {
@@ -87,11 +93,13 @@ impl GithubUri {
             // permissive and only check for repo existence. This is the
             // only way to get a basic check for private repos. Public repos
             // are not affected and should work with a normal check.
+            println!("not enough parts");
             return Err(ErrorKind::InvalidGithubUrl(uri.to_string()));
         }
 
         let owner = parts[0];
         if GITHUB_API_EXCLUDED_ENDPOINTS.contains(owner) {
+            println!("excluded endpoint");
             return Err(ErrorKind::InvalidGithubUrl(uri.to_string()));
         }
 
