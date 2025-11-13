@@ -199,7 +199,22 @@ impl SourceBaseInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroUsize;
     use std::path::PathBuf;
+
+    use crate::types::uri::raw::RawUriSpan;
+
+    fn raw_uri(text: &'static str) -> RawUri {
+        RawUri {
+            text: text.to_string(),
+            element: None,
+            attribute: None,
+            span: RawUriSpan {
+                line: NonZeroUsize::MAX,
+                column: None,
+            },
+        }
+    }
 
     #[test]
     fn test_base_with_filename() {
@@ -211,7 +226,7 @@ mod tests {
 
         assert_eq!(
             base_info
-                .parse_uri(&RawUri::from("#fragment"))
+                .parse_uri(&raw_uri("#fragment"))
                 .as_ref()
                 .map(|x| x.url.as_str()),
             Ok("file:///some/page.html#fragment")
@@ -228,7 +243,7 @@ mod tests {
 
         assert_eq!(
             base_info
-                .parse_uri(&RawUri::from("#fragment"))
+                .parse_uri(&raw_uri("#fragment"))
                 .as_ref()
                 .map(|x| x.url.as_str()),
             Ok("file:///some/pagex.html#fragment")

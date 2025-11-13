@@ -1,4 +1,5 @@
 use crate::files_from::FilesFrom;
+use crate::generate::GenerateMode;
 use crate::parse::parse_base;
 use crate::verbosity::Verbosity;
 use anyhow::{Context, Error, Result, anyhow};
@@ -9,6 +10,7 @@ use http::{
     HeaderMap,
     header::{HeaderName, HeaderValue},
 };
+use lychee_lib::Preprocessor;
 use lychee_lib::{
     Base, BasicAuthSelector, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_WAIT_TIME_SECS, DEFAULT_TIMEOUT_SECS, DEFAULT_USER_AGENT, FileExtensions,
@@ -106,7 +108,7 @@ impl FromStr for StatsFormat {
             "json" => Ok(StatsFormat::Json),
             "markdown" | "md" => Ok(StatsFormat::Markdown),
             "raw" => Ok(StatsFormat::Raw),
-            _ => Err(anyhow!("Unknown format {}", format)),
+            _ => Err(anyhow!("Unknown format {format}")),
         }
     }
 }
@@ -193,7 +195,6 @@ default_function! {
     retry_wait_time: usize = DEFAULT_RETRY_WAIT_TIME_SECS;
     method: String = DEFAULT_METHOD.to_string();
     verbosity: Verbosity = Verbosity::default();
-    cache_exclude_selector: StatusCodeExcluder = StatusCodeExcluder::new();
     accept_selector: StatusCodeSelector = StatusCodeSelector::default();
 }
 
@@ -231,11 +232,11 @@ fn parse_single_header(header: &str) -> Result<(HeaderName, HeaderValue)> {
     let parts: Vec<&str> = header.splitn(2, ':').collect();
     match parts.as_slice() {
         [name, value] => {
-            let name = HeaderName::from_str(name.trim())
-                .map_err(|e| anyhow!("Unable to convert header name '{}': {}", name.trim(), e))?;
-            let value = HeaderValue::from_str(value.trim()).map_err(|e| {
-                anyhow!("Unable to read value of header with name '{}': {}", name, e)
-            })?;
+            let name = name.trim();
+            let name = HeaderName::from_str(name)
+                .map_err(|e| anyhow!("Unable to convert header name '{name}': {e}"))?;
+            let value = HeaderValue::from_str(value.trim())
+                .map_err(|e| anyhow!("Unable to read value of header with name '{name}': {e}"))?;
             Ok((name, value))
         }
         _ => Err(anyhow!(
@@ -303,26 +304,28 @@ impl HeaderMapExt for HeaderMap {
         let mut header_map = HeaderMap::new();
         for (name, value) in headers {
             let header_name = HeaderName::from_bytes(name.as_bytes())
-                .map_err(|e| anyhow!("Invalid header name '{}': {}", name, e))?;
+                .map_err(|e| anyhow!("Invalid header name '{name}': {e}"))?;
             let header_value = HeaderValue::from_str(value)
-                .map_err(|e| anyhow!("Invalid header value '{}': {}", value, e))?;
+                .map_err(|e| anyhow!("Invalid header value '{value}': {e}"))?;
             header_map.insert(header_name, header_value);
         }
         Ok(header_map)
     }
 }
 
-/// A fast, async link checker
+/// lychee is a fast, asynchronous link checker which detects broken URLs and mail addresses
+/// in local files and websites. It supports Markdown and HTML and works well
+/// with many plain text file formats.
 ///
-/// Finds broken URLs and mail addresses inside Markdown, HTML,
-/// `reStructuredText`, websites and more!
+/// lychee is powered by lychee-lib, the Rust library for link checking.
 #[derive(Parser, Debug)]
-#[command(version, about)]
+#[command(version, about, next_display_order = None)]
 pub(crate) struct LycheeOptions {
     /// Inputs for link checking (where to get links to check from).
     #[arg(
         name = "inputs",
         required_unless_present = "files_from",
+        required_unless_present = "generate",
         long_help = "Inputs for link checking (where to get links to check from). These can be:
 files (e.g. `README.md`), file globs (e.g. `'~/git/*/README.md'`), remote URLs
 (e.g. `https://example.com/README.md`), or standard input (`-`). Alternatively,
@@ -331,27 +334,6 @@ use `--files-from` to read inputs from a file.
 NOTE: Use `--` to separate inputs from options that allow multiple arguments."
     )]
     raw_inputs: Vec<String>,
-
-    /// Read input filenames from the given file or stdin (if path is '-').
-    #[arg(
-        long = "files-from",
-        value_name = "PATH",
-        long_help = "Read input filenames from the given file or stdin (if path is '-').
-
-This is useful when you have a large number of inputs that would be
-cumbersome to specify on the command line directly.
-
-Examples:
-  lychee --files-from list.txt
-  find . -name '*.md' | lychee --files-from -
-  echo 'README.md' | lychee --files-from -
-
-File Format:
-  Each line should contain one input (file path, URL, or glob pattern).
-  Lines starting with '#' are treated as comments and ignored.
-  Empty lines are also ignored."
-    )]
-    files_from: Option<PathBuf>,
 
     /// Configuration file to use
     #[arg(short, long = "config")]
@@ -371,7 +353,7 @@ impl LycheeOptions {
         let mut all_inputs = self.raw_inputs.clone();
 
         // If --files-from is specified, read inputs from the file
-        if let Some(files_from_path) = &self.files_from {
+        if let Some(files_from_path) = &self.config.files_from {
             let files_from = FilesFrom::try_from(files_from_path.as_path())
                 .context("Cannot read inputs from --files-from")?;
             all_inputs.extend(files_from.inputs);
@@ -404,7 +386,29 @@ where
 /// The main configuration for lychee
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Parser, Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Config {
+    /// Read input filenames from the given file or stdin (if path is '-').
+    #[arg(
+        long = "files-from",
+        value_name = "PATH",
+        long_help = "Read input filenames from the given file or stdin (if path is '-').
+
+This is useful when you have a large number of inputs that would be
+cumbersome to specify on the command line directly.
+
+Examples:
+  lychee --files-from list.txt
+  find . -name '*.md' | lychee --files-from -
+  echo 'README.md' | lychee --files-from -
+
+File Format:
+  Each line should contain one input (file path, URL, or glob pattern).
+  Lines starting with '#' are treated as comments and ignored.
+  Empty lines are also ignored."
+    )]
+    files_from: Option<PathBuf>,
+
     /// Verbose program output
     #[clap(flatten)]
     #[serde(default = "verbosity")]
@@ -435,7 +439,7 @@ specify both extensions explicitly."
     #[serde(default = "FileExtensions::default")]
     pub(crate) extensions: FileExtensions,
 
-    /// Default file extension to treat files without extensions as having.
+    /// This is the default file extension that is applied to files without an extension.
     ///
     /// This is useful for files without extensions or with unknown extensions.
     /// The extension will be used to determine the file type for processing.
@@ -462,7 +466,6 @@ specify both extensions explicitly."
     /// A list of status codes that will be excluded from the cache
     #[arg(
         long,
-        default_value_t,
         long_help = "A list of status codes that will be ignored from the cache
 
 The following exclude range syntax is supported: [start]..[[=]end]|code. Some valid
@@ -478,8 +481,7 @@ Use \"lychee --cache-exclude-status '429, 500..502' <inputs>...\" to provide a
 comma-separated list of excluded status codes. This example will not cache results
 with a status code of 429, 500 and 501."
     )]
-    #[serde(default = "cache_exclude_selector")]
-    pub(crate) cache_exclude_status: StatusCodeExcluder,
+    pub(crate) cache_exclude_status: Option<StatusCodeExcluder>,
 
     /// Don't perform any link checking.
     /// Instead, dump all the links extracted from inputs that would be checked
@@ -873,6 +875,10 @@ which will construct a base URL while considering subpaths of `--root-dir`."
     #[serde(default)]
     pub(crate) format: StatsFormat,
 
+    /// Generate special output (e.g. the man page) instead of performing link checking
+    #[arg(long, value_parser = PossibleValuesParser::new(GenerateMode::VARIANTS).map(|s| s.parse::<GenerateMode>().unwrap()))]
+    pub(crate) generate: Option<GenerateMode>,
+
     /// When HTTPS is available, treat HTTP links as errors
     #[arg(long)]
     #[serde(default)]
@@ -893,6 +899,37 @@ and existing cookies will be updated."
     #[arg(long)]
     #[serde(default)]
     pub(crate) include_wikilinks: bool,
+
+    /// Preprocess input files.
+    #[arg(
+        short,
+        long,
+        value_name = "COMMAND",
+        long_help = r#"Preprocess input files.
+For each file input, this flag causes lychee to execute `COMMAND PATH` and process
+its standard output instead of the original contents of PATH. This allows you to
+convert files that would otherwise not be understood by lychee. The preprocessor
+COMMAND is only run on input files, not on standard input or URLs.
+
+To invoke programs with custom arguments or to use multiple preprocessors, use a
+wrapper program such as a shell script. An example script looks like this:
+
+#!/usr/bin/env bash
+case "$1" in
+*.pdf)
+    exec pdftohtml -i -s -stdout "$1"
+    ;;
+*.odt|*.docx|*.epub|*.ipynb)
+    exec pandoc "$1" --to=html --wrap=none
+    ;;
+*)
+    # identity function, output input without changes
+    exec cat
+    ;;
+esac"#
+    )]
+    #[serde(default)]
+    pub(crate) preprocess: Option<Preprocessor>,
 }
 
 impl Config {
@@ -947,7 +984,7 @@ impl Config {
                 base_url: None,
                 basic_auth: None,
                 cache: false,
-                cache_exclude_status: StatusCodeExcluder::default(),
+                cache_exclude_status: None,
                 cookie_jar: None,
                 default_extension: None,
                 dump: false,
@@ -962,7 +999,9 @@ impl Config {
                 extensions: FileType::default_extensions(),
                 fallback_extensions: Vec::<String>::new(),
                 fallback_base_url: None,
+                files_from: None,
                 format: StatsFormat::default(),
+                generate: None,
                 glob_ignore_case: false,
                 hidden: false,
                 include: Vec::<String>::new(),
@@ -983,6 +1022,7 @@ impl Config {
                 no_progress: false,
                 offline: false,
                 output: None,
+                preprocess: None,
                 remap: Vec::<String>::new(),
                 require_https: false,
                 retry_wait_time: DEFAULT_RETRY_WAIT_TIME_SECS,
@@ -1030,7 +1070,6 @@ mod tests {
             cli.accept,
             StatusCodeSelector::from_str("100..=103,200..=299").expect("no error")
         );
-        assert_eq!(cli.cache_exclude_status, StatusCodeExcluder::new());
     }
 
     #[test]
