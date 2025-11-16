@@ -2,6 +2,7 @@
 
 mod accept;
 mod base;
+mod base_info;
 mod basic_auth;
 mod cache;
 mod cookies;
@@ -20,6 +21,7 @@ pub(crate) mod uri;
 
 pub use accept::*;
 pub use base::Base;
+pub use base_info::SourceBaseInfo;
 pub use basic_auth::{BasicAuthCredentials, BasicAuthSelector};
 pub use cache::CacheStatus;
 pub use cookies::CookieJar;

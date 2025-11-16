@@ -1,5 +1,6 @@
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::{convert::TryFrom, path::PathBuf};
 
 use crate::{ErrorKind, ResolvedInputSource};
@@ -30,6 +31,16 @@ impl Base {
         }
     }
 
+    pub(crate) fn to_url(&self) -> Result<Url, ErrorKind> {
+        match self {
+            Self::Remote(url) => Ok(url.clone()),
+            Self::Local(path) => std::path::absolute(path)
+                .ok()
+                .and_then(|x| Url::from_directory_path(x).ok())
+                .ok_or_else(|| ErrorKind::InvalidUrlFromPath(path.to_owned())),
+        }
+    }
+
     pub(crate) fn from_source(source: &ResolvedInputSource) -> Option<Base> {
         match &source {
             ResolvedInputSource::RemoteUrl(url) => {
@@ -42,6 +53,7 @@ impl Base {
                 // We keep the username and password intact
                 Some(Base::Remote(*base_url))
             }
+            ResolvedInputSource::FsPath(path) => path.clone().canonicalize().ok().map(Base::Local),
             // other inputs do not have a URL to extract a base
             _ => None,
         }
@@ -82,6 +94,15 @@ impl TryFrom<String> for Base {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::try_from(value.as_str())
+    }
+}
+
+impl fmt::Display for Base {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Local(path) => write!(f, "{}", path.display()),
+            Self::Remote(url) => write!(f, "{}", url),
+        }
     }
 }
 
