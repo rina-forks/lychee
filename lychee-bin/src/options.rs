@@ -791,7 +791,7 @@ If specified, `--root-dir` acts according to three main rules:
   `/tmp/up.html` and not `/up.html`. This is because if `/tmp` was uploaded to
   a website root, traversing up beyond the root would not change the path.
 
-Additiionally, this option can be specified alongside `--base-url`. If both are
+Additionally, this option can be specified alongside `--base-url`. If both are
 given, the behavior is augmented to resolve links as if `--root-dir` was
 available at the remote URL of `--base-url`. See the help of `--base-url` for
 more information."
