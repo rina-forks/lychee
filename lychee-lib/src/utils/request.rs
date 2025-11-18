@@ -202,11 +202,11 @@ mod tests {
     fn create_ok_only(
         uris: Vec<RawUri>,
         source: &ResolvedInputSource,
-        root_dir: Option<&PathBuf>,
-        base: Option<&Base>,
+        root_and_base: Option<(&Path, Option<&Base>)>,
+        fallback_base: Option<&Base>,
         extractor: Option<&BasicAuthExtractor>,
     ) -> Vec<Request> {
-        create(uris, source, root_dir, base, extractor)
+        create(uris, source, root_and_base, fallback_base, extractor)
             .into_iter()
             .filter_map(Result::ok)
             .collect()
@@ -489,7 +489,7 @@ mod tests {
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("https://example.com/page")];
-        let requests = create_ok_only_ok_only(uris, &source, None, None, None);
+        let requests = create_ok_only(uris, &source, None, None, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -500,13 +500,13 @@ mod tests {
     }
 
     #[test]
-    fn test_create_ok_only_request_from_relative_file_path() {
+    fn test_create_request_from_relative_file_path() {
         let base = Base::Local(PathBuf::from("/tmp/lychee"));
         let input_source = ResolvedInputSource::FsPath(PathBuf::from("page.html"));
         let base_info = SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
 
         let actual =
-            create_ok_only_request(&raw_uri("file.html"), &input_source, &base_info, None).unwrap();
+            create_request(&raw_uri("file.html"), &input_source, &base_info, None).unwrap();
 
         assert_eq!(
             actual,
@@ -523,26 +523,25 @@ mod tests {
     }
 
     #[test]
-    fn test_create_ok_only_request_from_relative_file_path_errors() {
+    fn test_create_request_from_relative_file_path_errors() {
         // relative links unsupported from stdin
         assert!(
-            create_ok_only_request(
+            create_request(
                 &raw_uri("file.html"),
                 &ResolvedInputSource::Stdin,
-                None,
-                None,
+                &SourceBaseInfo::from_source(&ResolvedInputSource::Stdin, None, None).unwrap(),
                 None,
             )
             .is_err()
         );
 
         // error because no root-dir and no base-url
+        let src = ResolvedInputSource::FsPath(PathBuf::from("page.html"));
         assert!(
-            create_ok_only_request(
+            create_request(
                 &raw_uri("/file.html"),
-                &ResolvedInputSource::FsPath(PathBuf::from("page.html")),
-                None,
-                None,
+                &src,
+                &SourceBaseInfo::from_source(&src, None, None).unwrap(),
                 None,
             )
             .is_err()
@@ -550,13 +549,13 @@ mod tests {
     }
 
     #[test]
-    fn test_create_ok_only_request_from_absolute_file_path() {
+    fn test_create_request_from_absolute_file_path() {
         let base = Base::Local(PathBuf::from("/"));
         let input_source = ResolvedInputSource::FsPath(PathBuf::from("/tmp/lychee/page.html"));
         let base_info = SourceBaseInfo::from_source(&input_source, None, Some(&base)).unwrap();
 
         // Use an absolute path that's outside the base directory
-        let actual = create_ok_only_request(
+        let actual = create_request(
             &raw_uri("/usr/local/share/doc/example.html"),
             &input_source,
             &base_info,

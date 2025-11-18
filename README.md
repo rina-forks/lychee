@@ -474,6 +474,26 @@ Options:
           [default: compact]
           [possible values: compact, detailed, json, markdown, raw]
 
+      --fallback-base-url <FALLBACK_BASE_URL>
+          Fallback base URL used for inputs where no more suitable base URL applies.
+          Each input source may have an associated base URL which describes where that
+          input was located, for the purpose of resolving relative links. Where Lychee
+          cannot determine a *well-founded* base URL for an input source, this fallback
+          base URL will be used.
+
+          A *well-founded* base URL is one which:
+          - originates from a remote URL, in which case the base URL is just the remote URL, or
+          - originates from a local file where `--root-dir` has been specified and the local
+            file path is a subpath of `--root-dir`.
+
+          In all other cases, the base URL is not well-founded and this fallback base URL
+          applies. In particular, this includes all links passed by stdin and, if `--root-dir`
+          is unspecified, this includes all links within local files.
+
+          Note that this fallback base URL applies without consideration to local file paths.
+          For local files, it is usually better to specify `--base-url` and `--root-dir`
+          which will construct a base URL while considering subpaths of `--root-dir`.
+
       --fallback-extensions <FALLBACK_EXTENSIONS>
           When checking locally, attempts to locate missing files by trying the given
           fallback extensions. Multiple extensions can be separated by commas. Extensions
@@ -677,26 +697,6 @@ Options:
           given, the behavior is augmented to resolve links as if `--root-dir` was
           available at the remote URL of `--base-url`. See the help of `--base-url` for
           more information.
-
-      --fallback-base-url <FALLBACK_BASE_URL>
-          Fallback base URL used for inputs where no more suitable base URL applies.
-          Each input source may have an associated base URL which describes where that
-          input was located, for the purpose of resolving relative links. Where Lychee
-          cannot determine a *well-founded* base URL for an input source, this fallback
-          base URL will be used.
-
-          A *well-founded* base URL is one which:
-          - originates from a remote URL, in which case the base URL is just the remote URL, or
-          - originates from a local file where `--root-dir` has been specified and the local
-            file path is a subpath of `--root-dir`.
-
-          In all other cases, the base URL is not well-founded and this fallback base URL
-          applies. In particular, this includes all links passed by stdin and, if `--root-dir`
-          is unspecified, this includes all links within local files.
-
-          Note that this fallback base URL applies without consideration to local file paths.
-          For local files, it is usually better to specify `--base-url` and `--root-dir`
-          which will construct a base URL while considering subpaths of `--root-dir`.
 
   -s, --scheme <SCHEME>
           Only test links with the given schemes (e.g. https). Omit to check links with
