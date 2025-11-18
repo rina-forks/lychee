@@ -1,3 +1,4 @@
+use log::warn;
 use percent_encoding::percent_decode_str;
 use reqwest::Url;
 use std::borrow::Cow;
@@ -109,7 +110,7 @@ pub(crate) fn create(
         Err(e) => {
             // TODO: return an error inside this vec.
             warn!("Error handling source {source}: {e:?}");
-            return vec![]:
+            return vec![];
         }
     };
 
