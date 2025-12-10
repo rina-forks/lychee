@@ -419,6 +419,21 @@ mod cli {
             .stdout(contains("7 Total"))
             .stdout(contains("5 OK"))
             .stdout(contains("2 Errors"));
+
+        // test with a relative root-dir argument too
+        cargo_bin_cmd!()
+            .current_dir(dir.parent().unwrap())
+            .arg("--offline")
+            .arg("--include-fragments")
+            .arg("--root-dir")
+            .arg(dir.file_name().unwrap())
+            .arg(dir.join("nested").join("index.html"))
+            .env_clear()
+            .assert()
+            .failure()
+            .stdout(contains("7 Total"))
+            .stdout(contains("5 OK"))
+            .stdout(contains("2 Errors"));
     }
 
     #[test]
@@ -437,6 +452,18 @@ mod cli {
             .success()
             .stdout(contains("3 Total"))
             .stdout(contains("3 OK"));
+    }
+
+    #[test]
+    fn test_nonexistent_root_dir() {
+        cargo_bin_cmd!()
+            .arg("--root-dir")
+            .arg("i don't exist blah blah")
+            .arg("http://example.com")
+            .assert()
+            .failure()
+            .stderr(contains("Invalid root directory"))
+            .code(1);
     }
 
     #[test]
@@ -658,23 +685,19 @@ mod cli {
             .arg("--hidden")
             .assert()
             .success()
-            .stdout(contains("1 Total"));
+            .stdout(contains("2 Total"));
 
-        cargo_bin_cmd!()
+        let result = cargo_bin_cmd!()
             .arg("--dump")
             .arg("--hidden")
             .arg(fixtures_path!().join("hidden/"))
             .assert()
-            .stdout(contains("wikipedia.org"))
             .success();
 
-        cargo_bin_cmd!()
-            .arg("--dump-inputs")
-            .arg("--hidden")
-            .arg(fixtures_path!().join("hidden/"))
-            .assert()
-            .stdout(contains(".hidden"))
-            .success();
+        assert_lines_eq(
+            result,
+            vec!["https://rust-lang.org/", "https://rust-lang.org/"],
+        );
     }
 
     #[test]
@@ -2031,7 +2054,8 @@ The config file should contain every possible key for documentation purposes."
             .arg(test_dir)
             .assert()
             .success()
-            .stdout(contains(".hidden/file.md"));
+            .stdout(contains("hidden/.file.md"))
+            .stdout(contains("hidden/.hidden/file.md"));
     }
 
     #[test]
@@ -3102,5 +3126,16 @@ The config file should contain every possible key for documentation purposes."
                 "Preprocessor command '{}' failed: exited with non-zero code: Some error message",
                 script.as_os_str().to_str().unwrap()
             )));
+    }
+
+    #[test]
+    fn test_mdx_file() {
+        let file = fixtures_path!().join("mdx").join("test.mdx");
+        cargo_bin_cmd!()
+            .arg("--dump")
+            .arg(&file)
+            .assert()
+            .success()
+            .stdout(contains("https://example.com"));
     }
 }
