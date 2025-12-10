@@ -161,9 +161,12 @@ impl SourceBaseInfo {
 
     pub fn parse_uri(&self, raw_uri: &RawUri) -> Result<Uri, ErrorKind> {
         let is_absolute = || raw_uri.text.trim_ascii_start().starts_with('/');
+        println!("{:?}", self);
 
         let Uri { url } = Uri::try_from(raw_uri.clone()).or_else(|e| match &self.base {
             Some((_, _, _allow_absolute @ false)) if is_absolute() => {
+                // TODO: report more errors if a --root-dir is specified but URL falls outside of
+                // thingy
                 Err(ErrorKind::InvalidBaseJoin(raw_uri.text.clone()))
             }
             Some((origin, subpath, _)) => origin
