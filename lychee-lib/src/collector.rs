@@ -76,9 +76,7 @@ impl Collector {
         root_and_base: Option<(PathBuf, Option<Base>)>,
         fallback_base: Option<Base>,
     ) -> LycheeResult<Self> {
-        if let Some((root_dir, _)) = &root_and_base
-            && !root_dir.is_absolute()
-        {
+        if let Some((root_dir, _)) = &root_and_base {
             match root_dir.metadata() {
                 Ok(_) => (),
                 Err(e) => return Err(ErrorKind::InvalidRootDir(root_dir.to_path_buf(), e)),
