@@ -86,6 +86,11 @@ impl InputSource {
 
         // Assume all non-URL non-glob things are intended to be file paths.
         // The error message should be general enough to suggest solutions to the user.
+        //
+        // This changes --skip-missing slightly.
+        // - Errors from command-line file inputs will always be reported.
+        // - skip-missing applies to "discovered" inputs, such as URL errors and
+        //   permission denied while traversing directories.
         if path.exists() {
             // The file exists, so we return the path
             Ok(InputSource::FsPath(path))
