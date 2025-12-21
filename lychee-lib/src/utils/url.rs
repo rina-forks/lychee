@@ -33,55 +33,76 @@ pub(crate) trait ReqwestUrlExt {
 
 impl ReqwestUrlExt for Url {
     fn strip_prefix(&self, prefix: &Url) -> Option<String> {
-        let mut prefix_segments = prefix.path_segments()?.peekable();
-        let mut url_segments = self.path_segments()?.peekable();
-
-        // strip last component from prefix segments. this will either be
-        // a real non-empty filename, or an empty string if prefix ends in `/`.
-        let prefix_filename = prefix.path_segments()?.last();
-
-        if prefix_filename.is_some_and(|x| x == "") {
-            let _ = prefix_segments.next_back();
-        }
-
-        while let Some(s1) = prefix_segments.peek()
-            && let Some(s2) = url_segments.peek()
-            && s1 == s2
+        if self.scheme() != prefix.scheme()
+            || self.authority() != prefix.authority()
+            || self.port() != prefix.port()
         {
-            let _ = prefix_segments.next();
-            let _ = url_segments.next();
+            return None;
         }
 
-        let remaining_prefix = prefix_segments.collect::<Vec<&str>>();
-        let remaining_url = url_segments.collect::<Vec<&str>>();
+        let prefix_has_filename = prefix.path_segments()?.last().is_some_and(|x| x != "");
 
-        println!("{:?}", remaining_prefix);
-        println!("{:?}", remaining_url);
-
-        let relative = match (&remaining_prefix[..], &remaining_url[..]) {
-            ([], []) => Some(String::new()),
-
-            // URL is a suffix of prefix (possibly aside from filename).
-            // we can just use the rest of the URL.
-            ([], rest) => match prefix_filename {
-                None | Some("") => rest.join("/"),
-                Some(filename) => format!("{filename}/{}", rest.join("/")),
-            }.into(),
-
-            _ => None,
-        };
-
-        let relative = relative.map(|x| {
-            if x.starts_with("/") {
-                format!(".{x}")
+        let relative = if prefix_has_filename {
+            if self.path() == prefix.path() {
+                Some(String::new())
             } else {
-                x
+                None
             }
-        });
+        } else {
+            let mut prefix_segments = prefix.path_segments()?.peekable();
+            let mut url_segments = self.path_segments()?.peekable();
+
+            // discard "" entry from the end of the prefix
+            let _ = prefix_segments.next_back();
+
+            while let Some(s1) = prefix_segments.peek()
+                && let Some(s2) = url_segments.peek()
+                && s1 == s2
+            {
+                let _ = prefix_segments.next();
+                let _ = url_segments.next();
+            }
+
+            let remaining_prefix = prefix_segments.collect::<Vec<&str>>();
+            let remaining_url = url_segments.collect::<Vec<&str>>();
+
+            println!("{:?}", remaining_prefix);
+            println!("{:?}", remaining_url);
+
+            let relative = match (&remaining_prefix[..], &remaining_url[..]) {
+                // if nothing is remaining in URL, then we have prefix=/a/, url=/a.
+                // this should NOT be considered a match.
+                ([], []) => None,
+
+                ([], rest) => Some(rest.join("/")),
+
+                _ => None,
+            };
+
+            relative.map(|x| {
+                if x.starts_with("/") {
+                    format!(".{x}")
+                } else {
+                    x
+                }
+            })
+        };
 
         println!("x={:?}", relative);
 
-        relative
+        relative.map(|mut relative| {
+            if let Some(query) = self.query() {
+                relative.push('?');
+                relative.push_str(query);
+            }
+
+            if let Some(fragment) = self.fragment() {
+                relative.push('#');
+                relative.push_str(fragment);
+            }
+            relative
+        })
+
         // prefix
         //     .make_relative(self)
         //     .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with('/'))
@@ -154,6 +175,7 @@ mod test_url_ext {
 
     #[test]
     fn test_fdsa() {
+        // exact match
         assert_eq!(
             url!("https://a.com/b/x")
                 .strip_prefix(&url!("https://a.com/b/x"))
@@ -161,22 +183,54 @@ mod test_url_ext {
             Some("")
         );
         assert_eq!(
+            url!("https://a.com/b/")
+                .strip_prefix(&url!("https://a.com/b/"))
+                .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            url!("https://a.com/b/x?a=2")
+                .strip_prefix(&url!("https://a.com/b/x?b=x"))
+                .as_deref(),
+            Some("?a=2")
+        );
+
+        // no matches due to / difference
+        assert_eq!(
+            url!("https://a.com/b")
+                .strip_prefix(&url!("https://a.com/b/"))
+                .as_deref(),
+            None
+        );
+        assert_eq!(
+            url!("https://a.com/b/")
+                .strip_prefix(&url!("https://a.com/b"))
+                .as_deref(),
+            None
+        );
+
+        // changing filename leads to no match
+        assert_eq!(
             url!("https://a.com/b/x")
                 .strip_prefix(&url!("https://a.com/b/aa"))
                 .as_deref(),
             None
         );
+
+        // matching in subdir
         assert_eq!(
             url!("https://a.com/b/x")
                 .strip_prefix(&url!("https://a.com/b/"))
                 .as_deref(),
             Some("x")
         );
+
+        // no match
         assert_eq!(
             url!("https://a.com/b/x")
                 .strip_prefix(&url!("https://a.com/b"))
                 .as_deref(),
-            Some("b/x")
+            None
         );
         assert_eq!(
             url!("https://a.com/b/x")
@@ -191,6 +245,7 @@ mod test_url_ext {
             None
         );
 
+        // matches and maintains extra ./ inside url.
         assert_eq!(
             url!("https://a.com/b//x")
                 .strip_prefix(&url!("https://a.com/b/"))
