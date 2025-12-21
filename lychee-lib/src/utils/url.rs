@@ -33,9 +33,58 @@ pub(crate) trait ReqwestUrlExt {
 
 impl ReqwestUrlExt for Url {
     fn strip_prefix(&self, prefix: &Url) -> Option<String> {
-        prefix
-            .make_relative(self)
-            .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with('/'))
+        let mut prefix_segments = prefix.path_segments()?.peekable();
+        let mut url_segments = self.path_segments()?.peekable();
+
+        // strip last component from prefix segments. this will either be
+        // a real non-empty filename, or an empty string if prefix ends in `/`.
+        let prefix_filename = prefix.path_segments()?.last();
+
+        if prefix_filename.is_some_and(|x| x == "") {
+            let _ = prefix_segments.next_back();
+        }
+
+        while let Some(s1) = prefix_segments.peek()
+            && let Some(s2) = url_segments.peek()
+            && s1 == s2
+        {
+            let _ = prefix_segments.next();
+            let _ = url_segments.next();
+        }
+
+        let remaining_prefix = prefix_segments.collect::<Vec<&str>>();
+        let remaining_url = url_segments.collect::<Vec<&str>>();
+
+        println!("{:?}", remaining_prefix);
+        println!("{:?}", remaining_url);
+
+        let relative = match (&remaining_prefix[..], &remaining_url[..]) {
+            ([], []) => Some(String::new()),
+
+            // URL is a suffix of prefix (possibly aside from filename).
+            // we can just use the rest of the URL.
+            ([], rest) => match prefix_filename {
+                None | Some("") => rest.join("/"),
+                Some(filename) => format!("{filename}/{}", rest.join("/")),
+            }.into(),
+
+            _ => None,
+        };
+
+        let relative = relative.map(|x| {
+            if x.starts_with("/") {
+                format!(".{x}")
+            } else {
+                x
+            }
+        });
+
+        println!("x={:?}", relative);
+
+        relative
+        // prefix
+        //     .make_relative(self)
+        //     .filter(|subpath| !subpath.starts_with("../") && !subpath.starts_with('/'))
         // .inspect(|x| println!("subpathing {}", x))
         // .filter(|_| prefix.as_str().starts_with(self.as_str()))
     }
@@ -79,6 +128,12 @@ impl ReqwestUrlExt for Url {
 mod test_url_ext {
     use super::*;
 
+    macro_rules! url {
+        ($x: expr) => {
+            Url::parse($x).unwrap()
+        };
+    }
+
     #[test]
     fn test_strip_prefix() {
         // note trailing slashes for subpaths, otherwise everything becomes siblings
@@ -95,6 +150,75 @@ mod test_url_ext {
         assert_eq!(goog.strip_prefix(&goog_subpath).as_deref(), None);
 
         assert_eq!(goog_subpath.strip_prefix(&goog_subsubpath).as_deref(), None);
+    }
+
+    #[test]
+    fn test_fdsa() {
+        assert_eq!(
+            url!("https://a.com/b/x")
+                .strip_prefix(&url!("https://a.com/b/x"))
+                .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            url!("https://a.com/b/x")
+                .strip_prefix(&url!("https://a.com/b/aa"))
+                .as_deref(),
+            None
+        );
+        assert_eq!(
+            url!("https://a.com/b/x")
+                .strip_prefix(&url!("https://a.com/b/"))
+                .as_deref(),
+            Some("x")
+        );
+        assert_eq!(
+            url!("https://a.com/b/x")
+                .strip_prefix(&url!("https://a.com/b"))
+                .as_deref(),
+            Some("b/x")
+        );
+        assert_eq!(
+            url!("https://a.com/b/x")
+                .strip_prefix(&url!("https://a.com/a"))
+                .as_deref(),
+            None
+        );
+        assert_eq!(
+            url!("https://a.com/b/x")
+                .strip_prefix(&url!("https://a.com/a/"))
+                .as_deref(),
+            None
+        );
+
+        assert_eq!(
+            url!("https://a.com/b//x")
+                .strip_prefix(&url!("https://a.com/b/"))
+                .as_deref(),
+            Some("./x")
+        );
+        assert_eq!(
+            url!("https://a.com/b///x")
+                .strip_prefix(&url!("https://a.com/b/"))
+                .as_deref(),
+            Some(".//x")
+        );
+
+        println!(
+            "{:?}",
+            url!("https://a.com/b//x")
+                .path_segments()
+                .unwrap()
+                .collect::<Vec<&str>>()
+        );
+        println!(
+            "{:?}",
+            url!("https://a.com/b/")
+                .path_segments()
+                .unwrap()
+                .collect::<Vec<&str>>()
+        );
+        panic!();
     }
 }
 
