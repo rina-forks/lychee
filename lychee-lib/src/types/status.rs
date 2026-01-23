@@ -4,8 +4,8 @@ use super::CacheStatus;
 use super::redirect_history::Redirects;
 use crate::ErrorKind;
 use crate::RequestError;
+use crate::ratelimit::CacheableResponse;
 use http::StatusCode;
-use reqwest::Response;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -92,13 +92,12 @@ impl Serialize for Status {
 impl Status {
     #[must_use]
     /// Create a status object from a response and the set of accepted status codes
-    pub fn new(response: &Response, accepted: &HashSet<StatusCode>) -> Self {
-        let code = response.status();
-
-        if accepted.contains(&code) {
-            Self::Ok(code)
+    pub(crate) fn new(response: &CacheableResponse, accepted: &HashSet<StatusCode>) -> Self {
+        let status = response.status;
+        if accepted.contains(&status) {
+            Self::Ok(status)
         } else {
-            Self::Error(ErrorKind::RejectedStatusCode(code))
+            Self::Error(ErrorKind::RejectedStatusCode(status))
         }
     }
 
@@ -112,7 +111,7 @@ impl Status {
     /// because they are provided by the user and can be invalid according to
     /// the HTTP spec and IANA, but the user might still want to accept them.
     #[must_use]
-    pub fn from_cache_status(s: CacheStatus, accepted: &HashSet<u16>) -> Self {
+    pub fn from_cache_status(s: CacheStatus, accepted: &HashSet<StatusCode>) -> Self {
         match s {
             CacheStatus::Ok(code) => {
                 if matches!(s, CacheStatus::Ok(_)) || accepted.contains(&code) {
@@ -235,7 +234,8 @@ impl Status {
             Status::Ok(code)
             | Status::Redirected(code, _)
             | Status::UnknownStatusCode(code)
-            | Status::Timeout(Some(code)) => Some(*code),
+            | Status::Timeout(Some(code))
+            | Status::Cached(CacheStatus::Ok(code) | CacheStatus::Error(Some(code))) => Some(*code),
             Status::Error(kind) | Status::Unsupported(kind) => match kind {
                 ErrorKind::RejectedStatusCode(status_code) => Some(*status_code),
                 _ => match kind.reqwest_error() {
@@ -243,9 +243,6 @@ impl Status {
                     None => None,
                 },
             },
-            Status::Cached(CacheStatus::Ok(code) | CacheStatus::Error(Some(code))) => {
-                StatusCode::from_u16(*code).ok()
-            }
             _ => None,
         }
     }
@@ -255,14 +252,14 @@ impl Status {
     pub fn code_as_string(&self) -> String {
         match self {
             Status::Ok(code) | Status::Redirected(code, _) | Status::UnknownStatusCode(code) => {
-                code.as_str().to_string()
+                code.as_u16().to_string()
             }
             Status::Excluded => "EXCLUDED".to_string(),
             Status::Error(e) => match e {
-                ErrorKind::RejectedStatusCode(code) => code.as_str().to_string(),
+                ErrorKind::RejectedStatusCode(code) => code.as_u16().to_string(),
                 ErrorKind::ReadResponseBody(e) | ErrorKind::BuildRequestClient(e) => {
                     match e.status() {
-                        Some(code) => code.as_str().to_string(),
+                        Some(code) => code.as_u16().to_string(),
                         None => "ERROR".to_string(),
                     }
                 }
@@ -270,14 +267,14 @@ impl Status {
             },
             Status::RequestError(_) => "ERROR".to_string(),
             Status::Timeout(code) => match code {
-                Some(code) => code.as_str().to_string(),
+                Some(code) => code.as_u16().to_string(),
                 None => "TIMEOUT".to_string(),
             },
             Status::Unsupported(_) => "IGNORED".to_string(),
             Status::Cached(cache_status) => match cache_status {
-                CacheStatus::Ok(code) => code.to_string(),
+                CacheStatus::Ok(code) => code.as_u16().to_string(),
                 CacheStatus::Error(code) => match code {
-                    Some(code) => code.to_string(),
+                    Some(code) => code.as_u16().to_string(),
                     None => "ERROR".to_string(),
                 },
                 CacheStatus::Excluded => "EXCLUDED".to_string(),
@@ -299,20 +296,22 @@ impl Status {
 
 impl From<ErrorKind> for Status {
     fn from(e: ErrorKind) -> Self {
-        Self::Error(e)
-    }
-}
-
-impl From<reqwest::Error> for Status {
-    fn from(e: reqwest::Error) -> Self {
-        if e.is_timeout() {
-            Self::Timeout(e.status())
-        } else if e.is_builder() {
-            Self::Unsupported(ErrorKind::BuildRequestClient(e))
-        } else if e.is_body() || e.is_decode() {
-            Self::Unsupported(ErrorKind::ReadResponseBody(e))
-        } else {
-            Self::Error(ErrorKind::NetworkRequest(e))
+        match e {
+            ErrorKind::InvalidUrlHost => Status::Unsupported(ErrorKind::InvalidUrlHost),
+            ErrorKind::NetworkRequest(e)
+            | ErrorKind::ReadResponseBody(e)
+            | ErrorKind::BuildRequestClient(e) => {
+                if e.is_timeout() {
+                    Self::Timeout(e.status())
+                } else if e.is_builder() {
+                    Self::Unsupported(ErrorKind::BuildRequestClient(e))
+                } else if e.is_body() || e.is_decode() {
+                    Self::Unsupported(ErrorKind::ReadResponseBody(e))
+                } else {
+                    Self::Error(ErrorKind::NetworkRequest(e))
+                }
+            }
+            e => Self::Error(e),
         }
     }
 }
@@ -366,9 +365,14 @@ mod tests {
                 .unwrap(),
             300
         );
-        assert_eq!(Status::Cached(CacheStatus::Ok(200)).code().unwrap(), 200);
         assert_eq!(
-            Status::Cached(CacheStatus::Error(Some(404)))
+            Status::Cached(CacheStatus::Ok(StatusCode::OK))
+                .code()
+                .unwrap(),
+            200
+        );
+        assert_eq!(
+            Status::Cached(CacheStatus::Error(Some(StatusCode::NOT_FOUND)))
                 .code()
                 .unwrap(),
             404

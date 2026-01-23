@@ -1,8 +1,12 @@
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use futures::StreamExt;
+use http::StatusCode;
+use lychee_lib::StatusCodeSelector;
+use lychee_lib::ratelimit::HostPool;
 use reqwest::Url;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -15,16 +19,17 @@ use lychee_lib::{ResponseBody, Status};
 
 use crate::formatters::get_progress_formatter;
 use crate::formatters::response::ResponseFormatter;
+use crate::formatters::stats::ResponseStats;
 use crate::formatters::suggestion::Suggestion;
 use crate::parse::parse_duration_secs;
 use crate::progress::Progress;
-use crate::{ExitCode, cache::Cache, stats::ResponseStats};
+use crate::{ExitCode, cache::Cache};
 
 use super::CommandParams;
 
 pub(crate) async fn check<S>(
     params: CommandParams<S>,
-) -> Result<(ResponseStats, Arc<Cache>, ExitCode), ErrorKind>
+) -> Result<(ResponseStats, Cache, ExitCode, Arc<HostPool>), ErrorKind>
 where
     S: futures::Stream<Item = Result<Request, RequestError>>,
 {
@@ -41,19 +46,22 @@ where
     } else {
         ResponseStats::default()
     };
-    let cache_ref = params.cache.clone();
 
     let client = params.client;
     let cache = params.cache;
     let cache_exclude_status = params
         .cfg
         .cache_exclude_status
-        .unwrap_or_default()
-        .into_set();
-    let accept = params.cfg.accept.into();
+        .unwrap_or(StatusCodeSelector::empty())
+        .into();
+    let accept = params
+        .cfg
+        .accept
+        .unwrap_or(StatusCodeSelector::default_accepted())
+        .into();
 
     // Start receiving requests
-    tokio::spawn(request_channel_task(
+    let handle = tokio::spawn(request_channel_task(
         recv_req,
         send_resp,
         max_concurrency,
@@ -74,8 +82,9 @@ where
         stats,
     ));
 
-    // Wait until all messages are sent
-    send_inputs_loop(params.requests, send_req, &progress).await?;
+    // Wait until all requests are sent
+    send_requests(params.requests, send_req, &progress).await?;
+    let (cache, client) = handle.await?;
 
     // Wait until all responses are received
     let result = show_results_task.await?;
@@ -103,7 +112,8 @@ where
     } else {
         ExitCode::LinkCheckFailure
     };
-    Ok((stats, cache_ref, code))
+
+    Ok((stats, cache, code, client.host_pool()))
 }
 
 async fn suggest_archived_links(
@@ -143,7 +153,7 @@ async fn suggest_archived_links(
 // drops the `send_req` channel on exit
 // required for the receiver task to end, which closes send_resp, which allows
 // the show_results_task to finish
-async fn send_inputs_loop<S>(
+async fn send_requests<S>(
     requests: S,
     send_req: mpsc::Sender<Result<Request, RequestError>>,
     progress: &Progress,
@@ -180,17 +190,17 @@ async fn request_channel_task(
     send_resp: mpsc::Sender<Result<Response, ErrorKind>>,
     max_concurrency: usize,
     client: Client,
-    cache: Arc<Cache>,
-    cache_exclude_status: HashSet<u16>,
-    accept: HashSet<u16>,
-) {
+    cache: Cache,
+    cache_exclude_status: HashSet<StatusCode>,
+    accept: HashSet<StatusCode>,
+) -> (Cache, Client) {
     StreamExt::for_each_concurrent(
         ReceiverStream::new(recv_req),
         max_concurrency,
         |request: Result<Request, RequestError>| async {
             let response = handle(
                 &client,
-                cache.clone(),
+                &cache,
                 cache_exclude_status.clone(),
                 request,
                 accept.clone(),
@@ -204,6 +214,8 @@ async fn request_channel_task(
         },
     )
     .await;
+
+    (cache, client)
 }
 
 /// Check a URL and return a response.
@@ -235,10 +247,10 @@ async fn check_url(client: &Client, request: Request) -> Response {
 /// a failed response.
 async fn handle(
     client: &Client,
-    cache: Arc<Cache>,
-    cache_exclude_status: HashSet<u16>,
+    cache: &Cache,
+    cache_exclude_status: HashSet<StatusCode>,
     request: Result<Request, RequestError>,
-    accept: HashSet<u16>,
+    accept: HashSet<StatusCode>,
 ) -> Result<Response, ErrorKind> {
     // Note that the RequestError cases bypass the cache.
     let request = match request {
@@ -247,6 +259,8 @@ async fn handle(
     };
 
     let uri = request.uri.clone();
+
+    // First check the persistent disk-based cache
     if let Some(v) = cache.get(&uri) {
         // Found a cached request
         // Overwrite cache status in case the URI is excluded in the
@@ -258,18 +272,17 @@ async fn handle(
             // `accepted` status codes might have changed from the previous run
             // and they may have an impact on the interpretation of the status
             // code.
+            client.host_pool().record_persistent_cache_hit(&uri);
             Status::from_cache_status(v.value().status, &accept)
         };
+
         return Ok(Response::new(uri.clone(), status, request.source.into()));
     }
 
-    // Request was not cached; run a normal check
     let response = check_url(client, request).await;
 
-    // - Never cache filesystem access as it is fast already so caching has no
-    //   benefit.
-    // - Skip caching unsupported URLs as they might be supported in a
-    //   future run.
+    // - Never cache filesystem access as it is fast already so caching has no benefit.
+    // - Skip caching unsupported URLs as they might be supported in a future run.
     // - Skip caching excluded links; they might not be excluded in the next run.
     // - Skip caching links for which the status code has been explicitly excluded from the cache.
     let status = response.status();
@@ -289,10 +302,10 @@ async fn handle(
 /// - The status is unsupported.
 /// - The status is unknown.
 /// - The status code is excluded from the cache.
-fn ignore_cache(uri: &Uri, status: &Status, cache_exclude_status: &HashSet<u16>) -> bool {
+fn ignore_cache(uri: &Uri, status: &Status, cache_exclude_status: &HashSet<StatusCode>) -> bool {
     let status_code_excluded = status
         .code()
-        .is_some_and(|code| cache_exclude_status.contains(&code.as_u16()));
+        .is_some_and(|code| cache_exclude_status.contains(&code));
 
     uri.is_file()
         || status.is_excluded()
@@ -382,7 +395,7 @@ mod tests {
     #[test]
     fn test_cache_ignore_excluded_status() {
         // Cache is ignored for excluded status codes
-        let exclude = [StatusCode::OK.as_u16()].iter().copied().collect();
+        let exclude = HashSet::from([StatusCode::OK]);
 
         assert!(ignore_cache(
             &Uri::try_from("https://[::1]").unwrap(),

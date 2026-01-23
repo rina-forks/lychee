@@ -19,14 +19,14 @@ mod cli {
         fs::{self, File},
         io::{BufRead, Write},
         path::Path,
-        time::Duration,
+        time::{Duration, Instant},
     };
     use tempfile::{NamedTempFile, tempdir};
     use test_utils::{fixtures_path, mock_server, redirecting_mock_server, root_path};
 
     use uuid::Uuid;
     use wiremock::{
-        Mock, ResponseTemplate,
+        Mock, Request, ResponseTemplate,
         matchers::{basic_auth, method},
     };
 
@@ -1461,9 +1461,7 @@ The config file should contain every possible key for documentation purposes."
             .arg("--")
             .arg("-")
             .assert()
-            // LinkedIn does not always return 999, so we cannot check for that
-            // .stderr(contains(format!("[999] {unknown_url} | Unknown status")))
-            ;
+            .success();
 
         // If the status code was 999, the cache file should be empty
         // because we do not want to cache unknown status codes
@@ -1479,6 +1477,51 @@ The config file should contain every possible key for documentation purposes."
         // clear the cache file
         fs::remove_file(&cache_file)?;
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_process_internal_host_caching() -> Result<()> {
+        // Note that this process-internal per-host caching
+        // has no direct relation to the lychee cache file
+        // where state can be persisted between multiple invocations.
+        let server = wiremock::MockServer::start().await;
+
+        // Return one rate-limited response to make sure that
+        // such a response isn't cached.
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(ResponseTemplate::new(429))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp_dir = tempfile::tempdir()?;
+        for i in 0..9 {
+            let test_md1 = temp_dir.path().join(format!("test{i}.md"));
+            fs::write(&test_md1, server.uri())?;
+        }
+
+        cargo_bin_cmd!()
+            .arg(temp_dir.path())
+            .arg("--host-stats")
+            .assert()
+            .success()
+            .stdout(contains("9 Total"))
+            .stdout(contains("9 OK"))
+            .stdout(contains("0 Errors"))
+            // Per-host statistics
+            // 1 rate limited + 9 OK
+            .stdout(contains("10 reqs"))
+            // 1 rate limited, 1 OK, 8 cached
+            .stdout(contains("80.0% cached"));
+
+        server.verify().await;
         Ok(())
     }
 
@@ -2359,6 +2402,48 @@ The config file should contain every possible key for documentation purposes."
     }
 
     #[tokio::test]
+    async fn test_retry_rate_limit_headers() {
+        const RETRY_DELAY: Duration = Duration::from_secs(1);
+        const TOLERANCE: Duration = Duration::from_millis(500);
+        let server = wiremock::MockServer::start().await;
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .append_header("Retry-After", RETRY_DELAY.as_secs().to_string()),
+            )
+            .expect(1)
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        let start = Instant::now();
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(move |_: &Request| {
+                let delta = Instant::now().duration_since(start);
+                assert!(delta > RETRY_DELAY);
+                assert!(delta < RETRY_DELAY + TOLERANCE);
+                ResponseTemplate::new(200)
+            })
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        cargo_bin_cmd!()
+            // Direct args are not using the host pool, they are resolved earlier via Collector
+            .arg("-")
+            // Retry wait times are added on top of host-specific backoff timeout
+            .arg("--retry-wait-time")
+            .arg("0")
+            .write_stdin(server.uri())
+            .assert()
+            .success();
+
+        // Check that the server received the request with the header
+        server.verify().await;
+    }
+
+    #[tokio::test]
     async fn test_no_header_set_on_input() {
         let server = wiremock::MockServer::start().await;
         server
@@ -2394,7 +2479,6 @@ The config file should contain every possible key for documentation purposes."
                 wiremock::Mock::given(wiremock::matchers::method("GET"))
                     .and(wiremock::matchers::header("X-Foo", "Bar"))
                     .respond_with(wiremock::ResponseTemplate::new(200))
-                    // We expect the mock to be called exactly least once.
                     .expect(1)
                     .named("GET expecting custom header"),
             )
@@ -2421,7 +2505,6 @@ The config file should contain every possible key for documentation purposes."
                     .and(wiremock::matchers::header("X-Foo", "Bar"))
                     .and(wiremock::matchers::header("X-Bar", "Baz"))
                     .respond_with(wiremock::ResponseTemplate::new(200))
-                    // We expect the mock to be called exactly least once.
                     .expect(1)
                     .named("GET expecting custom header"),
             )
@@ -2449,8 +2532,8 @@ The config file should contain every possible key for documentation purposes."
                 wiremock::Mock::given(wiremock::matchers::method("GET"))
                     .and(wiremock::matchers::header("X-Foo", "Bar"))
                     .and(wiremock::matchers::header("X-Bar", "Baz"))
+                    .and(wiremock::matchers::header("X-Host-Specific", "Foo"))
                     .respond_with(wiremock::ResponseTemplate::new(200))
-                    // We expect the mock to be called exactly least once.
                     .expect(1)
                     .named("GET expecting custom header"),
             )
@@ -2461,7 +2544,8 @@ The config file should contain every possible key for documentation purposes."
             .arg("--verbose")
             .arg("--config")
             .arg(config)
-            .arg(server.uri())
+            .arg("-")
+            .write_stdin(server.uri())
             .assert()
             .success();
 
@@ -2545,6 +2629,8 @@ The config file should contain every possible key for documentation purposes."
         cargo_bin_cmd!()
             .arg("--dump")
             .arg("--include-wikilinks")
+            .arg("--base-url")
+            .arg(fixtures_path!())
             .arg(test_path)
             .assert()
             .success()
@@ -3003,6 +3089,74 @@ The config file should contain every possible key for documentation purposes."
             .assert()
             .success()
             .stdout(contains("https://example.org")); // Should extract the link as plaintext
+    }
+
+    #[test]
+    fn test_wikilink_fixture_obsidian_style() {
+        let input = fixtures_path!().join("wiki/obsidian-style.md");
+
+        // testing without fragments should not yield failures
+        cargo_bin_cmd!()
+            .arg(&input)
+            .arg("--include-wikilinks")
+            .arg("--fallback-extensions")
+            .arg("md")
+            .arg("--base-url")
+            .arg(fixtures_path!())
+            .assert()
+            .success()
+            .stdout(contains("4 OK"));
+    }
+
+    #[test]
+    fn test_wikilink_fixture_wikilink_non_existent() {
+        let input = fixtures_path!().join("wiki/Non-existent.md");
+
+        cargo_bin_cmd!()
+            .arg(&input)
+            .arg("--include-wikilinks")
+            .arg("--fallback-extensions")
+            .arg("md")
+            .arg("--base-url")
+            .arg(fixtures_path!())
+            .assert()
+            .failure()
+            .stdout(contains("3 Errors"));
+    }
+
+    #[test]
+    fn test_wikilink_fixture_with_fragments_obsidian_style_fixtures_excluded() {
+        let input = fixtures_path!().join("wiki/obsidian-style-plus-headers.md");
+
+        // fragments should resolve all headers
+        cargo_bin_cmd!()
+            .arg(&input)
+            .arg("--include-wikilinks")
+            .arg("--fallback-extensions")
+            .arg("md")
+            .arg("--base-url")
+            .arg(fixtures_path!())
+            .assert()
+            .success()
+            .stdout(contains("4 OK"));
+    }
+
+    #[test]
+    fn test_wikilink_fixture_with_fragments_obsidian_style() {
+        let input = fixtures_path!().join("wiki/obsidian-style-plus-headers.md");
+
+        // fragments should resolve all headers
+        cargo_bin_cmd!()
+            .arg(&input)
+            .arg("--include-wikilinks")
+            .arg("--include-fragments")
+            .arg("--fallback-extensions")
+            .arg("md")
+            .arg("--base-url")
+            .arg(fixtures_path!())
+            .assert()
+            .success()
+            .stdout(contains("4 OK"));
     }
 
     /// An input which matches nothing should print a warning and continue.
