@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::types::SourceBaseInfo;
+use crate::types::base_mapping;
 use crate::{
     Base, BasicAuthCredentials, ErrorKind, LycheeResult, Request, RequestError, Uri,
     basic_auth::BasicAuthExtractor,
@@ -29,7 +30,8 @@ fn create_request(
     base_info: &SourceBaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> LycheeResult<Request> {
-    let uri = base_info.parse_uri(raw_uri)?;
+    // WARN: BROKEN because this needs to do all mapping.
+    let uri = Uri { url: base_info.parse_raw_uri(raw_uri)? };
     let source = source.clone();
     let element = raw_uri.element.clone();
     let attribute = raw_uri.attribute.clone();
@@ -47,11 +49,16 @@ fn try_parse_into_uri(
     base: Option<&Base>,
 ) -> LycheeResult<Uri> {
     // HACK: if only base_url is specified, use that as a fallback_base_url.
-    let base_info = match (root_dir, base) {
-        (None, base) => SourceBaseInfo::from_source(source, None, base),
-        (Some(root_dir), base) => SourceBaseInfo::from_source(source, Some((root_dir, base)), None),
+    let (a, b) = match (root_dir, base) {
+        (None, base) => base_mapping::prepare_source_base_info(source, None, base),
+        (Some(root_dir), base) => base_mapping::prepare_source_base_info(
+            source,
+            Some((root_dir, base)),
+            None,
+        ),
     }?;
-    base_info.parse_uri(raw_uri)
+
+    base_mapping::parse_url_with_base_info(&a, &b, raw_uri)
 }
 
 // Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
@@ -105,24 +112,30 @@ pub(crate) fn create(
     fallback_base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Vec<Result<Request, RequestError>> {
-    let base_info = match SourceBaseInfo::from_source(source, root_and_base, fallback_base) {
-        Ok(base_info) => base_info,
-        Err(e) => {
-            // TODO: return an error inside this vec.
-            warn!("Error handling source {source}: {e:?}");
-            return vec![];
-        }
-    };
+    let (base_info, mappings) =
+        match base_mapping::prepare_source_base_info(source, root_and_base, fallback_base) {
+            Ok(base_info) => base_info,
+            Err(e) => {
+                // TODO: return an error inside this vec.
+                warn!("Error handling source {source}: {e:?}");
+                return vec![];
+            }
+        };
 
     let mut requests = HashSet::<Request>::new();
     let mut errors = Vec::<RequestError>::new();
 
     for raw_uri in uris {
-        let result = create_request(&raw_uri, source, &base_info, extractor);
-        match result {
-            Ok(request) => {
-                requests.insert(request);
+        match base_mapping::parse_url_with_base_info(&base_info, &mappings, &raw_uri) {
+            Ok(uri) => {
+                let source = source.clone();
+                let element = raw_uri.element.clone();
+                let attribute = raw_uri.attribute.clone();
+                let credentials = extract_credentials(extractor, &uri);
+
+                requests.insert(Request::new(uri, source, element, attribute, credentials));
             }
+
             Err(e) => errors.push(RequestError::CreateRequestItem(
                 raw_uri.clone(),
                 source.clone(),
