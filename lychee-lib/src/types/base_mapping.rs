@@ -167,15 +167,13 @@ pub fn prepare_source_base_info(
 ) -> Result<(SourceBaseInfo, UrlMappings), ErrorKind> {
     // TODO: get rid of the Path/Base complication
     let root_and_base: Option<(Url, Url)> = match root_and_base {
-        Some((root, Some(base))) => Some((root, base.clone())),
-        Some((root, None)) => Some((root, Base::Local(root.to_owned()))),
+        Some((root, base_option)) => {
+            let root = Base::Local(root.to_owned()).to_url()?;
+            let base = base_option.map_or_else(|| Ok(root.clone()), Base::to_url)?;
+            Some((root, base))
+        }
         None => None,
-    }
-    .map(|(root, base)| -> Result<_, ErrorKind> {
-        let root_url = Base::Local(root.to_owned()).to_url()?;
-        Ok((root_url, base.to_url()?))
-    })
-    .transpose()?;
+    };
 
     let fallback_base = match fallback_base.map(Base::to_url).transpose()? {
         None => SourceBaseInfo::none(),
