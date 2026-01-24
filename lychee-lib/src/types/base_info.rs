@@ -77,20 +77,34 @@ impl SourceBaseInfo {
         if url.scheme() == "file" {
             Self::NoRoot(url.clone())
         } else {
-            let mut origin = url.clone();
-
-            match origin.path_segments_mut() {
-                Ok(mut segments) => segments.clear(),
-                Err(()) => return Self::no_info(),
-            };
-
-            let path = match url.path().strip_prefix('/') {
-                Some(path) => path.to_string(),
-                None => return Self::no_info(),
-            };
-
-            Self::Full(origin, path)
+            match Self::split_url_origin_and_path(url) {
+                None => Self::no_info(),
+                Some((origin, path)) => Self::full_info(origin, path),
+            }
         }
+    }
+
+    fn split_url_origin_and_path(url: &Url) -> Option<(Url, String)> {
+        let origin = url.join("/").ok()?;
+        let subpath = origin.make_relative(&url)?;
+        Some((origin, subpath))
+    }
+
+    /// If this is a [`SourceBaseInfo::NoRoot`], promote it to a [`SourceBaseInfo::Full`]
+    /// by using the filesystem root as the "origin" for root-relative links.
+    ///
+    /// Generally, this function should be avoided in favour of a more explicit
+    /// user-provided root directory. The filesystem root is rarely a good place
+    /// to look for files.
+    ///
+    /// Makes no change to other [`SourceBaseInfo`] variants.
+    pub fn use_fs_root_as_origin(self) -> Self {
+        let Self::NoRoot(url) = self else { return self };
+
+        let (fs_root, subpath) = Self::split_url_origin_and_path(&url)
+            .expect("splitting up a NoRoot file:// URL should work");
+
+        Self::full_info(fs_root, subpath)
     }
 
     pub fn supports_root_relative(&self) -> bool {
@@ -132,8 +146,8 @@ impl SourceBaseInfo {
     /// Returns an error if the text is an invalid URL, or if the text is a
     /// relative link and this [`SourceBaseInfo`] variant cannot resolve
     /// the relative link.
-    pub fn parse_url_text(&self, text: &str) -> Result<Url, ErrorKind> {
-        match Uri::try_from(text.as_ref()) {
+    pub fn parse_url_text(&self, text: &str, root_dir: Option<&Url>) -> Result<Url, ErrorKind> {
+        let url = match Uri::try_from(text.as_ref()) {
             Ok(Uri { url }) => Ok(url),
             Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
                 Self::NoRoot(_) if Self::is_root_relative(text) => {
@@ -150,6 +164,22 @@ impl SourceBaseInfo {
                 Self::None => Err(e),
             },
             Err(e) => Err(e),
+        }?;
+
+        // if a root-relative link resulted in a file:// URL, then prefix
+        // this with root-dir. doing this after parsing prevents a `/../`
+        // link from traversing outside the root-dir.
+        if let Some(root_dir) = root_dir
+            && Self::is_root_relative(text)
+            && url.scheme() == "file"
+        {
+            let (_, subpath) =
+                Self::split_url_origin_and_path(&url).expect("file:// URL can be split");
+            root_dir
+                .join(&subpath)
+                .map_err(|e| ErrorKind::ParseUrl(e, text.to_string()))
+        } else {
+            Ok(url)
         }
     }
 
@@ -256,7 +286,7 @@ pub fn parse_url_with_base_info(
     mappings: &UrlMappings,
     text: &str,
 ) -> Result<Uri, ErrorKind> {
-    let url = base_info.parse_url_text(text)?;
+    let url = base_info.parse_url_text(text, None)?;
 
     let mut url = match mappings.map_to_new_url(&url) {
         Some((local, subpath)) => local.join(&subpath).ok(),

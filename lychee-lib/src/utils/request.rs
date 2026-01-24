@@ -32,7 +32,7 @@ fn create_request(
 ) -> LycheeResult<Request> {
     // WARN: BROKEN because this needs to do all mapping.
     let uri = Uri {
-        url: base_info.parse_url_text(&raw_uri.text)?,
+        url: base_info.parse_url_text(&raw_uri.text, None)?,
     };
     let source = source.clone();
     let element = raw_uri.element.clone();
