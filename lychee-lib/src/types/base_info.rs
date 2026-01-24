@@ -2,6 +2,7 @@
 //! applying base URL and root dir mappings.
 
 use reqwest::Url;
+use std::borrow::Cow;
 use std::path::Path;
 
 use crate::Base;
@@ -147,18 +148,25 @@ impl SourceBaseInfo {
     /// relative link and this [`SourceBaseInfo`] variant cannot resolve
     /// the relative link.
     pub fn parse_url_text(&self, text: &str, root_dir: Option<&Url>) -> Result<Url, ErrorKind> {
+        // HACK: if root-dir is specified, apply it by fudging around with
+        // file:// URLs. also see bottom of this function.
+        let fake_base_info = match root_dir {
+            Some(_) => Cow::Owned(self.clone().use_fs_root_as_origin()),
+            None => Cow::Borrowed(self),
+        };
+
         let url = match Uri::try_from(text.as_ref()) {
             Ok(Uri { url }) => Ok(url),
-            Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
+            Err(e @ ErrorKind::ParseUrl(_, _)) => match *fake_base_info {
                 Self::NoRoot(_) if Self::is_root_relative(text) => {
                     // TODO: report more errors if a --root-dir is specified but URL falls outside of
                     // thingy
                     Err(ErrorKind::InvalidBaseJoin(text.to_string()))
                 }
-                Self::NoRoot(base) => base
+                Self::NoRoot(ref base) => base
                     .join_rooted(&[&text])
                     .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
-                Self::Full(origin, subpath) => origin
+                Self::Full(ref origin, ref subpath) => origin
                     .join_rooted(&[subpath, &text])
                     .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
                 Self::None => Err(e),
