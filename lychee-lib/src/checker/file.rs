@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::checker::wikilink::resolver::WikilinkResolver;
 use crate::{
-    Base, ErrorKind, Result, Status, Uri,
+    Base, BaseInfo, ErrorKind, Result, Status, Uri,
     utils::fragment_checker::{FragmentChecker, FragmentInput},
 };
 
@@ -52,7 +52,7 @@ impl FileChecker {
     ///
     /// Fails if an invalid `base` is provided when including wikilinks.
     pub(crate) fn new(
-        base: Option<&Base>,
+        base: &BaseInfo,
         fallback_extensions: Vec<String>,
         index_files: Option<Vec<String>>,
         include_fragments: bool,

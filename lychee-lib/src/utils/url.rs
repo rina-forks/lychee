@@ -4,7 +4,6 @@ use std::sync::LazyLock;
 use url::Url;
 
 use linkify::LinkFinder;
-use reqwest::Url;
 use url::ParseError;
 
 pub(crate) trait ReqwestUrlExt {

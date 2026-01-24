@@ -5,7 +5,7 @@ use crate::filter::PathExcludes;
 
 use crate::types::resolver::UrlContentResolver;
 use crate::{
-    Base, Input, LycheeResult, Request, RequestError, basic_auth::BasicAuthExtractor,
+    Base, BaseInfo, Input, LycheeResult, Request, RequestError, basic_auth::BasicAuthExtractor,
     extract::Extractor, types::FileExtensions, types::uri::raw::RawUri, utils::request,
 };
 use futures::TryStreamExt;
@@ -32,7 +32,7 @@ pub struct Collector {
     include_wikilinks: bool,
     use_html5ever: bool,
     root_dir: Option<PathBuf>,
-    base: Option<Base>,
+    base: BaseInfo,
     excluded_paths: PathExcludes,
     headers: HeaderMap,
     client: Client,
@@ -56,7 +56,7 @@ impl Default for Collector {
             skip_hidden: true,
             skip_ignored: true,
             root_dir: None,
-            base: None,
+            base: BaseInfo::no_info(),
             headers: HeaderMap::new(),
             client: Client::new(),
             excluded_paths: PathExcludes::empty(),
@@ -72,9 +72,9 @@ impl Collector {
     ///
     /// Returns an `Err` if the `root_dir` is not an absolute path
     /// or if the reqwest `Client` fails to build
-    pub fn new(root_dir: Option<PathBuf>, base: Option<Base>) -> LycheeResult<Self> {
+    pub fn new(root_dir: Option<PathBuf>, base: BaseInfo) -> LycheeResult<Self> {
         let root_dir = match root_dir {
-            Some(root_dir) if base.is_some() => Some(root_dir),
+            Some(root_dir) if base.supports_locally_relative() => Some(root_dir),
             Some(root_dir) => Some(
                 root_dir
                     .canonicalize()
@@ -223,43 +223,49 @@ impl Collector {
 
         stream::iter(inputs)
             .par_then_unordered(None, move |input| {
-                let default_base = global_base.clone();
                 let extensions = extensions.clone();
                 let resolver = resolver.clone();
                 let excluded_paths = excluded_paths.clone();
                 let preprocessor = self.preprocessor.clone();
 
                 async move {
-                    let base = match &input.source {
-                        InputSource::RemoteUrl(url) => Base::try_from(url.as_str()).ok(),
-                        _ => default_base,
-                    };
-
-                    input
-                        .get_contents(
-                            skip_missing_inputs,
-                            skip_hidden,
-                            skip_ignored,
-                            extensions,
-                            resolver,
-                            excluded_paths,
-                            preprocessor,
-                        )
-                        .map(move |content| (content, base.clone()))
+                    input.get_contents(
+                        skip_missing_inputs,
+                        skip_hidden,
+                        skip_ignored,
+                        extensions,
+                        resolver,
+                        excluded_paths,
+                        preprocessor,
+                    )
                 }
             })
             .flatten()
-            .par_then_unordered(None, move |(content, base)| {
+            .par_then_unordered(None, move |content| {
+                let global_base = global_base.clone();
                 let root_dir = self.root_dir.clone();
                 let basic_auth_extractor = self.basic_auth_extractor.clone();
+
                 async move {
                     let content = content?;
+
+                    let source_base = content
+                        .source
+                        .to_url()
+                        .map_err(|e| {
+                            RequestError::GetInputContent(content.source.clone().into(), e)
+                        })?
+                        .as_ref()
+                        .map_or(BaseInfo::no_info(), BaseInfo::from_source_url);
+
+                    let base = source_base.or_fallback(global_base);
+
                     let uris: Vec<RawUri> = extractor.extract(&content);
                     let requests = request::create(
                         uris,
                         &content.source,
                         root_dir.as_ref(),
-                        base.as_ref(),
+                        &base,
                         basic_auth_extractor.as_ref(),
                     );
                     Result::Ok(stream::iter(requests))

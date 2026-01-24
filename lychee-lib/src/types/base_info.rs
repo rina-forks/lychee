@@ -90,22 +90,41 @@ impl BaseInfo {
         Some((origin, subpath))
     }
 
+    /// Returns the URL for the current [`BaseInfo`], joining the origin and path
+    /// if needed.
     pub fn to_url(&self) -> Option<Url> {
         match self {
             Self::None => None,
             Self::NoRoot(url) => Some(url.clone()),
-            Self::Full(url, path) => url.join(path),
+            Self::Full(url, path) => url.join(path).ok(),
         }
     }
 
+    /// Returns the filesystem path for the current [`BaseInfo`] if the underlying
+    /// URL is a `file:` URL.
     pub fn to_path(&self) -> Option<PathBuf> {
-        self.to_url().filter(|url| url.scheme() == "file").and_then(|x| x.to_file_path().ok())
+        self.to_url()
+            .filter(|url| url.scheme() == "file")
+            .and_then(|x| x.to_file_path().ok())
     }
 
+    /// Returns the scheme of the underlying URL.
+    pub fn scheme(&self) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::NoRoot(url) => Some(url.scheme()),
+            Self::Full(url, _) => Some(url.scheme()),
+        }
+    }
+
+    /// Returns whether this [`BaseInfo`] variant supports resolving root-relative links.
+    ///
+    /// If true, implies [`BaseInfo::supports_locally_relative`].
     pub fn supports_root_relative(&self) -> bool {
         matches!(self, Self::Full(_, _))
     }
 
+    /// Returns whether this [`BaseInfo`] variant supports resolving locally-relative links.
     pub fn supports_locally_relative(&self) -> bool {
         !matches!(self, Self::None)
     }
@@ -145,7 +164,7 @@ impl BaseInfo {
         // HACK: if root-dir is specified, apply it by fudging around with
         // file:// URLs.
         let fake_base_info = match root_dir {
-            Some(root_dir) if Self::is_root_relative(text) => {
+            Some(root_dir) if self.scheme() == Some("file") && Self::is_root_relative(text) => {
                 Cow::Owned(Self::full_info(root_dir.clone(), String::new()))
             }
             Some(_) | None => Cow::Borrowed(self),

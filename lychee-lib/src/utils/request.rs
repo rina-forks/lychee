@@ -23,7 +23,7 @@ fn create_request(
     raw_uri: &RawUri,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: BaseInfo,
+    base: &BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> LycheeResult<Request> {
     let uri = try_parse_into_uri(raw_uri, source, root_dir, base)?;
@@ -50,25 +50,12 @@ fn try_parse_into_uri(
     raw_uri: &RawUri,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: BaseInfo,
+    base: &BaseInfo,
 ) -> LycheeResult<Uri> {
-    let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
-    let uri = match Uri::try_from(raw_uri.clone()) {
-        Ok(uri) => uri,
-        Err(_) => match base {
-            Some(base_url) => match base_url.join(&text) {
-                Some(url) => Uri { url },
-                None => return Err(ErrorKind::InvalidBaseJoin(text.clone())),
-            },
-            None => match source {
-                ResolvedInputSource::FsPath(root) => {
-                    create_uri_from_file_path(root, &text, root_dir.is_none())?
-                }
-                _ => return Err(ErrorKind::UnsupportedUriType(text)),
-            },
-        },
-    };
-    Ok(uri)
+    let root_dir = root_dir.and_then(|x| Url::from_directory_path(x).ok());
+    Ok(base
+        .parse_url_text(&raw_uri.text, root_dir.as_ref())?
+        .into())
 }
 
 // Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
@@ -119,16 +106,14 @@ pub(crate) fn create(
     uris: Vec<RawUri>,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: BaseInfo,
+    base: &BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Vec<Result<Request, RequestError>> {
-    let base = base.cloned().or_else(|| Base::from_source(source));
-
     let mut requests = HashSet::<Request>::new();
     let mut errors = Vec::<RequestError>::new();
 
     for raw_uri in uris {
-        let result = create_request(&raw_uri, source, root_dir, base.as_ref(), extractor);
+        let result = create_request(&raw_uri, source, root_dir, base, extractor);
         match result {
             Ok(request) => {
                 requests.insert(request);

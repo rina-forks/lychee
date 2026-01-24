@@ -14,14 +14,14 @@ impl WikilinkResolver {
     ///
     /// Fails if `base` is not `Some(base)` with `base` being a file:// URL.
     pub(crate) fn new(
-        base: BaseInfo,
+        base: &BaseInfo,
         fallback_extensions: Vec<String>,
     ) -> Result<Self, ErrorKind> {
         let base = match base {
-            None => Err(ErrorKind::WikilinkInvalidBase(
+            BaseInfo::None => Err(ErrorKind::WikilinkInvalidBase(
                 "Base must be specified for wikilink checking".into(),
             ))?,
-            Some(base) => base,
+            base => base,
         };
         let base = match base.to_path() {
             Some(p) => p,
