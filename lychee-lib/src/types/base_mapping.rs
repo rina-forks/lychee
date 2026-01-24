@@ -100,7 +100,7 @@ impl SourceBaseInfo {
     }
 
     pub fn parse_raw_uri(&self, raw_uri: &RawUri) -> Result<Url, ErrorKind> {
-        match Uri::try_from(raw_uri.clone()) {
+        match Uri::try_from(raw_uri.text.as_ref()) {
             Ok(Uri { url }) => Ok(url),
             Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
                 _ if raw_uri.is_root_relative() && !self.supports_root_relative() => {
