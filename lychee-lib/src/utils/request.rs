@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    Base, BasicAuthCredentials, ErrorKind, LycheeResult, Request, RequestError, Uri,
+    Base, BaseInfo, BasicAuthCredentials, ErrorKind, LycheeResult, Request, RequestError, Uri,
     basic_auth::BasicAuthExtractor,
     types::{ResolvedInputSource, uri::raw::RawUri},
     utils::{path, url},
@@ -23,7 +23,7 @@ fn create_request(
     raw_uri: &RawUri,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: Option<&Base>,
+    base: BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> LycheeResult<Request> {
     let uri = try_parse_into_uri(raw_uri, source, root_dir, base)?;
@@ -50,7 +50,7 @@ fn try_parse_into_uri(
     raw_uri: &RawUri,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: Option<&Base>,
+    base: BaseInfo,
 ) -> LycheeResult<Uri> {
     let text = prepend_root_dir_if_absolute_local_link(&raw_uri.text, root_dir);
     let uri = match Uri::try_from(raw_uri.clone()) {
@@ -119,7 +119,7 @@ pub(crate) fn create(
     uris: Vec<RawUri>,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: Option<&Base>,
+    base: BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Vec<Result<Request, RequestError>> {
     let base = base.cloned().or_else(|| Base::from_source(source));
@@ -213,7 +213,7 @@ mod tests {
         uris: Vec<RawUri>,
         source: &ResolvedInputSource,
         root_dir: Option<&PathBuf>,
-        base: Option<&Base>,
+        base: BaseInfo,
         extractor: Option<&BasicAuthExtractor>,
     ) -> Vec<Request> {
         create(uris, source, root_dir, base, extractor)

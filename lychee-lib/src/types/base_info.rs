@@ -3,7 +3,7 @@
 
 use reqwest::Url;
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::Base;
 use crate::ErrorKind;
@@ -88,6 +88,18 @@ impl BaseInfo {
         let origin = url.join("/").ok()?;
         let subpath = origin.make_relative(&url)?;
         Some((origin, subpath))
+    }
+
+    pub fn to_url(&self) -> Option<Url> {
+        match self {
+            Self::None => None,
+            Self::NoRoot(url) => Some(url.clone()),
+            Self::Full(url, path) => url.join(path),
+        }
+    }
+
+    pub fn to_path(&self) -> Option<PathBuf> {
+        self.to_url().filter(|url| url.scheme() == "file").and_then(|x| x.to_file_path().ok())
     }
 
     pub fn supports_root_relative(&self) -> bool {

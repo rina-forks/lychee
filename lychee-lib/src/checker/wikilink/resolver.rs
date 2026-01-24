@@ -1,4 +1,4 @@
-use crate::{Base, ErrorKind, Uri, checker::wikilink::index::WikilinkIndex};
+use crate::{BaseInfo, ErrorKind, Uri, checker::wikilink::index::WikilinkIndex};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -14,7 +14,7 @@ impl WikilinkResolver {
     ///
     /// Fails if `base` is not `Some(Base::Local(_))`.
     pub(crate) fn new(
-        base: Option<&Base>,
+        base: BaseInfo,
         fallback_extensions: Vec<String>,
     ) -> Result<Self, ErrorKind> {
         let base = match base {
