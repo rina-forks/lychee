@@ -165,8 +165,8 @@ pub fn prepare_source_base_info(
     root_and_base: Option<(&Path, Option<&Base>)>,
     fallback_base: Option<&Base>,
 ) -> Result<(SourceBaseInfo, UrlMappings), ErrorKind> {
-    // TODO: get rid of the Path/Base complication
     let root_and_base: Option<(Url, Url)> = match root_and_base {
+        // if root is specified but not base, use root dir as the base as well.
         Some((root, base_option)) => {
             let root = Base::Local(root.to_owned()).to_url()?;
             let base = base_option.map_or_else(|| Ok(root.clone()), Base::to_url)?;

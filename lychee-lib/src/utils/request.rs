@@ -112,11 +112,13 @@ pub(crate) fn create(
     fallback_base: Option<&Base>,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Vec<Result<Request, RequestError>> {
+    // TODO: it would probably be nice to inline prepare_source_base_info into this function.
+    // however, it uses a lot of `.?` and we need to catch and handle all those errors here.
     let (base_info, mappings) =
         match base_mapping::prepare_source_base_info(source, root_and_base, fallback_base) {
             Ok(base_info) => base_info,
             Err(e) => {
-                // TODO: return an error inside this vec.
+                // TODO: IMPORTANT! return an error inside this vec.
                 warn!("Error handling source {source}: {e:?}");
                 return vec![];
             }
