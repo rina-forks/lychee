@@ -76,6 +76,7 @@ use openssl_sys as _; // required for vendored-openssl feature
 use options::{HeaderMapExt, LYCHEE_CONFIG_FILE};
 use ring as _; // required for apple silicon
 
+use lychee_lib::BaseInfo;
 use lychee_lib::Collector;
 use lychee_lib::CookieJar;
 use lychee_lib::{BasicAuthExtractor, StatusCodeSelector};
@@ -186,7 +187,7 @@ fn load_config() -> Result<LycheeOptions> {
     }
 
     // TODO: Remove this warning and the parameter with 1.0
-    if opts.config.base.is_some() {
+    if !opts.config.base.is_none() {
         warn!(
             "WARNING: `--base` is deprecated and will soon be removed; use `--base-url` instead."
         );
@@ -321,14 +322,13 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
 
     // TODO: Remove this section after `--base` got removed with 1.0
     let base = match (opts.config.base.clone(), opts.config.base_url.clone()) {
-        (None, None) => None,
-        (Some(base), None) => Some(base),
-        (None, Some(base_url)) => Some(base_url),
-        (Some(_base), Some(base_url)) => {
+        (BaseInfo::None, base_url) => base_url,
+        (base, BaseInfo::None) => base,
+        (_base, base_url) => {
             warn!(
                 "WARNING: Both, `--base` and `--base-url` are set. Using `base-url` and ignoring `--base` (as it's deprecated)."
             );
-            Some(base_url)
+            base_url
         }
     };
 

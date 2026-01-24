@@ -2,6 +2,7 @@
 //! applying base URL and root dir mappings.
 
 use reqwest::Url;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +11,7 @@ use crate::ErrorKind;
 use crate::ResolvedInputSource;
 use crate::Uri;
 use crate::types::uri::raw::RawUri;
+use crate::utils;
 use crate::utils::url::ReqwestUrlExt;
 use url::PathSegmentsMut;
 
@@ -26,7 +28,8 @@ use url::PathSegmentsMut;
 /// relative links---for instance, stdin. It may also be built from input
 /// sources which can resolve *locally*-relative links, but not *root*-relative
 /// links.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[serde(try_from = "&str")]
 pub enum BaseInfo {
     /// No base information is available. This is for sources with no base
     /// information, such as [`ResolvedInputSource::Stdin`]. This can
@@ -90,6 +93,41 @@ impl BaseInfo {
         Some((origin, subpath))
     }
 
+    /// Constructs a [`BaseInfo`] from the given URL, requiring that the given path be acceptable as a
+    /// base URL. That is, it cannot be a special scheme like `data:`.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the given URL cannot be a base.
+    pub fn from_base_url(url: &Url) -> Result<BaseInfo, ErrorKind> {
+        if url.cannot_be_a_base() {
+            return Err(ErrorKind::InvalidBase(
+                url.to_string(),
+                "The given URL cannot be used as a base URL".to_string(),
+            ));
+        }
+
+        Ok(Self::from_source_url(url))
+    }
+
+    /// Constructs a [`BaseInfo`] from the given filesystem path, requiring that the given path be
+    /// absolute.
+    ///
+    /// # Errors
+    ///
+    /// Errors if the given path is not an absolute path.
+    pub fn from_path(path: &Path) -> Result<BaseInfo, ErrorKind> {
+        let Ok(url) = Url::from_directory_path(path) else {
+            return Err(ErrorKind::InvalidBase(
+                path.to_string_lossy().to_string(),
+                "Base must either be a full URL (with scheme) or an absolute local path"
+                    .to_string(),
+            ));
+        };
+
+        Self::from_base_url(&url)
+    }
+
     /// Returns the URL for the current [`BaseInfo`], joining the origin and path
     /// if needed.
     pub fn to_url(&self) -> Option<Url> {
@@ -117,6 +155,11 @@ impl BaseInfo {
         }
     }
 
+    /// Returns whether this value is [`BaseInfo::None`].
+    pub fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+
     /// Returns whether this [`BaseInfo`] variant supports resolving root-relative links.
     ///
     /// If true, implies [`BaseInfo::supports_locally_relative`].
@@ -126,7 +169,7 @@ impl BaseInfo {
 
     /// Returns whether this [`BaseInfo`] variant supports resolving locally-relative links.
     pub fn supports_locally_relative(&self) -> bool {
-        !matches!(self, Self::None)
+        !self.is_none()
     }
 
     /// Returns the [`BaseInfo`] which has _more information_
@@ -185,6 +228,17 @@ impl BaseInfo {
                 Self::None => Err(e),
             },
             Err(e) => Err(e),
+        }
+    }
+}
+
+impl TryFrom<&str> for BaseInfo {
+    type Error = ErrorKind;
+
+    fn try_from(value: &str) -> Result<Self, ErrorKind> {
+        match utils::url::parse_url_or_path(value) {
+            Ok(url) => BaseInfo::from_base_url(&url),
+            Err(path) => BaseInfo::from_path(&PathBuf::from(path)),
         }
     }
 }

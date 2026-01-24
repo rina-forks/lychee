@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use lychee_lib::{Base, remap::Remaps};
+use lychee_lib::{Base, BaseInfo, remap::Remaps};
 use std::time::Duration;
 
 /// Parse seconds into a `Duration`
@@ -15,6 +15,22 @@ pub(crate) fn parse_remaps(remaps: &[String]) -> Result<Remaps> {
 
 pub(crate) fn parse_base(src: &str) -> Result<Base> {
     match Base::try_from(src) {
+        Ok(x) => Ok(x),
+        Err(e) => {
+            // if context is defined, clap displays only the context string in
+            // argument parse errors. to keep the message from within InvalidBase,
+            // we need to retain it manually.
+            let message = format!(
+                "{e}. See `--help` for more information. If you want to resolve \
+                root-relative links in local files, also see `--root-dir`."
+            );
+            Err(e).context(message)
+        }
+    }
+}
+
+pub(crate) fn parse_base_info(src: &str) -> Result<BaseInfo> {
+    match BaseInfo::try_from(src) {
         Ok(x) => Ok(x),
         Err(e) => {
             // if context is defined, clap displays only the context string in
