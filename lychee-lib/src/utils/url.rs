@@ -1,6 +1,47 @@
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use linkify::LinkFinder;
+use reqwest::Url;
+use url::ParseError;
+
+pub(crate) trait ReqwestUrlExt {
+    /// Joins the given subpaths, using the current URL as the base URL.
+    ///
+    /// Conceptually, `url.join_rooted(&[path])` is very similar to
+    /// `url.join(path)` (using [`Url::join`]). However, they differ when
+    /// the base URL is a `file:` URL.
+    ///
+    /// When used with a `file:` base URL, [`join_rooted`] will ensure
+    /// that any relative links will *not* traverse outside of the given
+    /// base URL. In this way, it is "rooted" at the `file:` base URL.
+    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
+}
+
+impl ReqwestUrlExt for Url {
+    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError> {
+        let base = self;
+        let fake_base = match base.scheme() {
+            "file" => {
+                let mut fake_base = base.join("/")?;
+                fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
+                Some(fake_base)
+            }
+            _ => None,
+        };
+
+        let mut url = Cow::Borrowed(fake_base.as_ref().unwrap_or(base));
+        for subpath in subpaths {
+            url = Cow::Owned(url.join(subpath)?);
+        }
+
+        match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
+            Some(relative_to_base) => base.join(&relative_to_base),
+            None => Ok(url.into_owned()),
+        }
+        // .inspect(|x| println!("---> {x}"))
+    }
+}
 
 static LINK_FINDER: LazyLock<LinkFinder> = LazyLock::new(LinkFinder::new);
 
