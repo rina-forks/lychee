@@ -1,6 +1,5 @@
 //! Parses and resolves [`RawUri`] into into fully-qualified [`Uri`] by
 //! applying base URL and root dir mappings.
-//!
 
 use reqwest::Url;
 use std::path::Path;
@@ -74,6 +73,7 @@ impl SourceBaseInfo {
     /// - For other URLs, a [`SourceBaseInfo::Full`] will be constructed from the URL's
     ///   origin and path.
     pub fn from_source_url(url: &Url) -> Self {
+        // TODO: should we return error if a cannot_be_a_base is given?
         if url.scheme() == "file" {
             Self::NoRoot(url.clone())
         } else {
@@ -196,6 +196,17 @@ impl SourceBaseInfo {
     // - [`SourceBaseInfo::new`] fails.
 }
 
+/// Prepares the needed structures to resolve links within a particular input source,
+/// while handling roots and bases.
+///
+/// This should be called once for each [`ResolvedInputSource`] being processed.
+/// The result of this function should be used with [`parse_url_with_base_info`]
+/// to parse and resolve URLs.
+///
+/// # Errors
+///
+/// Returns an error if converting any of the given arguments to a URL fails
+/// unexpectedly.
 pub fn prepare_source_base_info(
     source: &ResolvedInputSource,
     root_and_base: Option<(&Path, Option<&Base>)>,
@@ -213,7 +224,7 @@ pub fn prepare_source_base_info(
 
     let fallback_base = match fallback_base.map(Base::to_url).transpose()? {
         None => SourceBaseInfo::no_info(),
-        Some(fallback_url) => SourceBaseInfo::full_info(fallback_url, String::new()),
+        Some(fallback_url) => SourceBaseInfo::from_source_url(&fallback_url),
     };
 
     let mappings = UrlMappings::new(root_and_base.into_iter().collect())?;
@@ -226,17 +237,26 @@ pub fn prepare_source_base_info(
         None => SourceBaseInfo::no_info(),
     };
 
+    // NOTE: using fallback base in this way lets it override non-rooted
+    // file:// bases.
     let base_info = base_info.or_fallback(fallback_base);
 
     Ok((base_info, mappings))
 }
 
+/// Parses and resolves the given URL text using the given base and mapping
+/// information.
+///
+/// # Errors
+///
+/// Returns an error if the given text cannot be parsed as a URL, or if the
+/// text parses as a relative URL and it cannot be resolved.
 pub fn parse_url_with_base_info(
     base_info: &SourceBaseInfo,
     mappings: &UrlMappings,
-    raw_uri: &RawUri,
+    text: &str,
 ) -> Result<Uri, ErrorKind> {
-    let url = base_info.parse_url_text(&raw_uri.text)?;
+    let url = base_info.parse_url_text(text)?;
 
     let mut url = match mappings.map_to_new_url(&url) {
         Some((local, subpath)) => local.join(&subpath).ok(),

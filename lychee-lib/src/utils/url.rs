@@ -27,12 +27,12 @@ pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>>
 }
 
 pub(crate) trait ReqwestUrlExt {
-    fn strip_prefix(&self, prefix: &Url) -> Option<String>;
+    fn strictly_relative_to(&self, prefix: &Url) -> Option<String>;
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
 }
 
 impl ReqwestUrlExt for Url {
-    fn strip_prefix(&self, prefix: &Url) -> Option<String> {
+    fn strictly_relative_to(&self, prefix: &Url) -> Option<String> {
         if self.scheme() != prefix.scheme()
             || self.authority() != prefix.authority()
             || self.port() != prefix.port()
@@ -156,21 +156,26 @@ mod test_url_ext {
     }
 
     #[test]
-    fn test_strip_prefix() {
+    fn test_strictly_relative_to() {
         // note trailing slashes for subpaths, otherwise everything becomes siblings
         let goog = Url::parse("https://goog.com").unwrap();
         let goog_subpath = goog.join("subpath/").unwrap();
         let goog_subsubpath = goog_subpath.join("sub2path/").unwrap();
 
-        assert_eq!(goog.strip_prefix(&goog).as_deref(), Some(""));
+        assert_eq!(goog.strictly_relative_to(&goog).as_deref(), Some(""));
 
         assert_eq!(
-            goog_subpath.strip_prefix(&goog).as_deref(),
+            goog_subpath.strictly_relative_to(&goog).as_deref(),
             Some("subpath/")
         );
-        assert_eq!(goog.strip_prefix(&goog_subpath).as_deref(), None);
+        assert_eq!(goog.strictly_relative_to(&goog_subpath).as_deref(), None);
 
-        assert_eq!(goog_subpath.strip_prefix(&goog_subsubpath).as_deref(), None);
+        assert_eq!(
+            goog_subpath
+                .strictly_relative_to(&goog_subsubpath)
+                .as_deref(),
+            None
+        );
     }
 
     #[test]
@@ -178,19 +183,19 @@ mod test_url_ext {
         // exact match
         assert_eq!(
             url!("https://a.com/b/x")
-                .strip_prefix(&url!("https://a.com/b/x"))
+                .strictly_relative_to(&url!("https://a.com/b/x"))
                 .as_deref(),
             Some("")
         );
         assert_eq!(
             url!("https://a.com/b/")
-                .strip_prefix(&url!("https://a.com/b/"))
+                .strictly_relative_to(&url!("https://a.com/b/"))
                 .as_deref(),
             Some("")
         );
         assert_eq!(
             url!("https://a.com/b/x?a=2")
-                .strip_prefix(&url!("https://a.com/b/x?b=x"))
+                .strictly_relative_to(&url!("https://a.com/b/x?b=x"))
                 .as_deref(),
             Some("?a=2")
         );
@@ -198,13 +203,13 @@ mod test_url_ext {
         // no matches due to / difference
         assert_eq!(
             url!("https://a.com/b")
-                .strip_prefix(&url!("https://a.com/b/"))
+                .strictly_relative_to(&url!("https://a.com/b/"))
                 .as_deref(),
             None
         );
         assert_eq!(
             url!("https://a.com/b/")
-                .strip_prefix(&url!("https://a.com/b"))
+                .strictly_relative_to(&url!("https://a.com/b"))
                 .as_deref(),
             None
         );
@@ -212,7 +217,7 @@ mod test_url_ext {
         // changing filename leads to no match
         assert_eq!(
             url!("https://a.com/b/x")
-                .strip_prefix(&url!("https://a.com/b/aa"))
+                .strictly_relative_to(&url!("https://a.com/b/aa"))
                 .as_deref(),
             None
         );
@@ -220,7 +225,7 @@ mod test_url_ext {
         // matching in subdir
         assert_eq!(
             url!("https://a.com/b/x")
-                .strip_prefix(&url!("https://a.com/b/"))
+                .strictly_relative_to(&url!("https://a.com/b/"))
                 .as_deref(),
             Some("x")
         );
@@ -228,19 +233,19 @@ mod test_url_ext {
         // no match
         assert_eq!(
             url!("https://a.com/b/x")
-                .strip_prefix(&url!("https://a.com/b"))
+                .strictly_relative_to(&url!("https://a.com/b"))
                 .as_deref(),
             None
         );
         assert_eq!(
             url!("https://a.com/b/x")
-                .strip_prefix(&url!("https://a.com/a"))
+                .strictly_relative_to(&url!("https://a.com/a"))
                 .as_deref(),
             None
         );
         assert_eq!(
             url!("https://a.com/b/x")
-                .strip_prefix(&url!("https://a.com/a/"))
+                .strictly_relative_to(&url!("https://a.com/a/"))
                 .as_deref(),
             None
         );
@@ -248,13 +253,13 @@ mod test_url_ext {
         // matches and maintains extra ./ inside url.
         assert_eq!(
             url!("https://a.com/b//x")
-                .strip_prefix(&url!("https://a.com/b/"))
+                .strictly_relative_to(&url!("https://a.com/b/"))
                 .as_deref(),
             Some("./x")
         );
         assert_eq!(
             url!("https://a.com/b///x")
-                .strip_prefix(&url!("https://a.com/b/"))
+                .strictly_relative_to(&url!("https://a.com/b/"))
                 .as_deref(),
             Some(".//x")
         );

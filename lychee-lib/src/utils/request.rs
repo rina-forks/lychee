@@ -58,7 +58,7 @@ fn try_parse_into_uri(
         }
     }?;
 
-    base_info::parse_url_with_base_info(&a, &b, raw_uri)
+    base_info::parse_url_with_base_info(&a, &b, &raw_uri.text)
 }
 
 // Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
@@ -128,7 +128,7 @@ pub(crate) fn create(
     let mut errors = Vec::<RequestError>::new();
 
     for raw_uri in uris {
-        match base_info::parse_url_with_base_info(&base_info, &mappings, &raw_uri) {
+        match base_info::parse_url_with_base_info(&base_info, &mappings, &raw_uri.text) {
             Ok(uri) => {
                 let source = source.clone();
                 let element = raw_uri.element.clone();
