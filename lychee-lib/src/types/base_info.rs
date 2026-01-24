@@ -237,6 +237,12 @@ impl BaseInfo {
 impl TryFrom<&str> for BaseInfo {
     type Error = ErrorKind;
 
+    /// Attempts to parse a base from the given string which may be
+    /// a URL or a filesystem path. In both cases, the string must
+    /// represent a valid base (i.e., not resulting in [`BaseInfo::None`]).
+    ///
+    /// Additionally, the empty string is accepted and will be parsed to
+    /// [`BaseInfo::None`].
     fn try_from(value: &str) -> Result<Self, ErrorKind> {
         if value.is_empty() {
             return Ok(BaseInfo::no_info());

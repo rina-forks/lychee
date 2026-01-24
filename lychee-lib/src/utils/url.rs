@@ -13,9 +13,14 @@ pub(crate) trait ReqwestUrlExt {
     /// `url.join(path)` (using [`Url::join`]). However, they differ when
     /// the base URL is a `file:` URL.
     ///
-    /// When used with a `file:` base URL, [`join_rooted`] will ensure
-    /// that any relative links will *not* traverse outside of the given
-    /// base URL. In this way, it is "rooted" at the `file:` base URL.
+    /// When used with a `file:` base URL, [`ReqwestUrlExt::join_rooted`]
+    /// will ensure that any relative links will *not* traverse outside
+    /// of the given base URL. In this way, it is "rooted" at the `file:`
+    /// base URL.
+    ///
+    /// Note that this rooting behaviour only happens for `file:` bases.
+    /// Relative links with non-`file:` bases can traverse anywhere as
+    /// usual.
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
 }
 
