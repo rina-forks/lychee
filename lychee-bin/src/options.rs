@@ -765,9 +765,9 @@ Defaults to '100..=103,200..=299' if the user provides no value."
     pub(crate) method: String,
 
     /// Deprecated; use `--base-url` instead
-    #[arg(long, value_parser = parse_base_info, default_value = "")]
+    #[arg(long, value_parser = parse_base_info)]
     #[serde(skip)]
-    pub(crate) base: BaseInfo,
+    pub(crate) base: Option<BaseInfo>,
 
     /// Base URL used to resolve relative URLs in local files.
     /// Example: <https://example.com>
@@ -775,7 +775,6 @@ Defaults to '100..=103,200..=299' if the user provides no value."
         short,
         long,
         value_parser = parse_base_info,
-        default_value = "",
         long_help = "Base URL to use when resolving relative URLs in local files. If specified,
 relative links in local files are interpreted as being relative to the given
 base URL.
@@ -797,7 +796,7 @@ The provided base URL value must either be a URL (with scheme) or an absolute pa
 Note that certain URL schemes cannot be used as a base, e.g., `data` and `mailto`."
     )]
     #[serde(default)]
-    pub(crate) base_url: BaseInfo,
+    pub(crate) base_url: Option<BaseInfo>,
 
     /// Root directory to use when checking absolute links in local files.
     /// Must be an absolute path.
@@ -987,8 +986,8 @@ impl Config {
                 // Keys with defaults to assign
                 accept: None,
                 archive: None,
-                base: BaseInfo::no_info(),
-                base_url: BaseInfo::no_info(),
+                base: None,
+                base_url: None,
                 basic_auth: None,
                 cache: false,
                 cache_exclude_status: None,

@@ -76,7 +76,6 @@ use openssl_sys as _; // required for vendored-openssl feature
 use options::{HeaderMapExt, LYCHEE_CONFIG_FILE};
 use ring as _; // required for apple silicon
 
-use lychee_lib::BaseInfo;
 use lychee_lib::Collector;
 use lychee_lib::CookieJar;
 use lychee_lib::{BasicAuthExtractor, StatusCodeSelector};
@@ -322,8 +321,8 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
 
     // TODO: Remove this section after `--base` got removed with 1.0
     let base = match (opts.config.base.clone(), opts.config.base_url.clone()) {
-        (BaseInfo::None, base_url) => base_url,
-        (base, BaseInfo::None) => base,
+        (None, base_url) => base_url,
+        (base, None) => base,
         (_base, base_url) => {
             warn!(
                 "WARNING: Both, `--base` and `--base-url` are set. Using `base-url` and ignoring `--base` (as it's deprecated)."
@@ -347,7 +346,7 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
         return Ok(exit_code as i32);
     }
 
-    let mut collector = Collector::new(opts.config.root_dir.clone(), base)?
+    let mut collector = Collector::new(opts.config.root_dir.clone(), base.unwrap_or_default())?
         .skip_missing_inputs(opts.config.skip_missing)
         .skip_hidden(!opts.config.hidden)
         // be aware that "no ignore" means do *not* ignore files
