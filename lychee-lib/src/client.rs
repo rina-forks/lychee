@@ -268,7 +268,7 @@ pub struct ClientBuilder {
     ///
     /// E.g. if the base is `/home/user/` and the path is `file.txt`, the
     /// resolved path would be `/home/user/file.txt`.
-    #[builder(default = BaseInfo::no_info())]
+    #[builder(default)]
     base: BaseInfo,
 
     /// Initial time between retries of failed requests.

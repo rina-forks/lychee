@@ -4,6 +4,7 @@
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::Base;
@@ -28,13 +29,14 @@ use url::PathSegmentsMut;
 /// relative links---for instance, stdin. It may also be built from input
 /// sources which can resolve *locally*-relative links, but not *root*-relative
 /// links.
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize, Default)]
 #[serde(try_from = "&str")]
 pub enum BaseInfo {
     /// No base information is available. This is for sources with no base
     /// information, such as [`ResolvedInputSource::Stdin`]. This can
     /// resolve no relative links, and only fully-qualified links will be
     /// parsed successfully.
+    #[default]
     None,
 
     /// A base which cannot resolve root-relative links. This is for
@@ -236,6 +238,9 @@ impl TryFrom<&str> for BaseInfo {
     type Error = ErrorKind;
 
     fn try_from(value: &str) -> Result<Self, ErrorKind> {
+        if value.is_empty() {
+            return Ok(BaseInfo::no_info());
+        }
         match utils::url::parse_url_or_path(value) {
             Ok(url) => BaseInfo::from_base_url(&url),
             Err(path) => BaseInfo::from_path(&PathBuf::from(path)),
