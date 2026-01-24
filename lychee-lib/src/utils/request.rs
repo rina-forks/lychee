@@ -31,7 +31,9 @@ fn create_request(
     extractor: Option<&BasicAuthExtractor>,
 ) -> LycheeResult<Request> {
     // WARN: BROKEN because this needs to do all mapping.
-    let uri = Uri { url: base_info.parse_raw_uri(raw_uri)? };
+    let uri = Uri {
+        url: base_info.parse_raw_uri(raw_uri)?,
+    };
     let source = source.clone();
     let element = raw_uri.element.clone();
     let attribute = raw_uri.attribute.clone();
@@ -51,11 +53,9 @@ fn try_parse_into_uri(
     // HACK: if only base_url is specified, use that as a fallback_base_url.
     let (a, b) = match (root_dir, base) {
         (None, base) => base_mapping::prepare_source_base_info(source, None, base),
-        (Some(root_dir), base) => base_mapping::prepare_source_base_info(
-            source,
-            Some((root_dir, base)),
-            None,
-        ),
+        (Some(root_dir), base) => {
+            base_mapping::prepare_source_base_info(source, Some((root_dir, base)), None)
+        }
     }?;
 
     base_mapping::parse_url_with_base_info(&a, &b, raw_uri)

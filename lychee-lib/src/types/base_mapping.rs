@@ -100,25 +100,21 @@ impl SourceBaseInfo {
     }
 
     pub fn parse_raw_uri(&self, raw_uri: &RawUri) -> Result<Url, ErrorKind> {
-        let is_root_relative = || {
-            let text = raw_uri.text.trim_ascii_start();
-            text.starts_with('/') && !text.starts_with("//")
-        };
-
-        Uri::try_from(raw_uri.clone())
-            .or_else(|e| match self {
-                _ if is_root_relative() && !self.supports_root_relative() => {
+        match Uri::try_from(raw_uri.clone()) {
+            Ok(Uri { url }) => Ok(url),
+            Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
+                _ if raw_uri.is_root_relative() && !self.supports_root_relative() => {
                     // TODO: report more errors if a --root-dir is specified but URL falls outside of
                     // thingy
                     Err(ErrorKind::InvalidBaseJoin(raw_uri.text.clone()))
                 }
                 Self(Some((origin, subpath, _))) => origin
                     .join_rooted(&[subpath, &raw_uri.text])
-                    .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone()))
-                    .map(|url| Uri { url }),
+                    .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone())),
                 Self(None) => Err(e),
-            })
-            .map(|x| x.url)
+            },
+            Err(e) => Err(e),
+        }
     }
 
     // Constructs a `SourceBaseInfo` from the given input source, root and base
