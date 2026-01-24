@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::types::SourceBaseInfo;
-use crate::types::base_mapping;
+use crate::types::base_info;
 use crate::{
     Base, BasicAuthCredentials, ErrorKind, LycheeResult, Request, RequestError, Uri,
     basic_auth::BasicAuthExtractor,
@@ -52,13 +52,13 @@ fn try_parse_into_uri(
 ) -> LycheeResult<Uri> {
     // HACK: if only base_url is specified, use that as a fallback_base_url.
     let (a, b) = match (root_dir, base) {
-        (None, base) => base_mapping::prepare_source_base_info(source, None, base),
+        (None, base) => base_info::prepare_source_base_info(source, None, base),
         (Some(root_dir), base) => {
-            base_mapping::prepare_source_base_info(source, Some((root_dir, base)), None)
+            base_info::prepare_source_base_info(source, Some((root_dir, base)), None)
         }
     }?;
 
-    base_mapping::parse_url_with_base_info(&a, &b, raw_uri)
+    base_info::parse_url_with_base_info(&a, &b, raw_uri)
 }
 
 // Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
@@ -115,7 +115,7 @@ pub(crate) fn create(
     // TODO: it would probably be nice to inline prepare_source_base_info into this function.
     // however, it uses a lot of `.?` and we need to catch and handle all those errors here.
     let (base_info, mappings) =
-        match base_mapping::prepare_source_base_info(source, root_and_base, fallback_base) {
+        match base_info::prepare_source_base_info(source, root_and_base, fallback_base) {
             Ok(base_info) => base_info,
             Err(e) => {
                 // TODO: IMPORTANT! return an error inside this vec.
@@ -128,7 +128,7 @@ pub(crate) fn create(
     let mut errors = Vec::<RequestError>::new();
 
     for raw_uri in uris {
-        match base_mapping::parse_url_with_base_info(&base_info, &mappings, &raw_uri) {
+        match base_info::parse_url_with_base_info(&base_info, &mappings, &raw_uri) {
             Ok(uri) => {
                 let source = source.clone();
                 let element = raw_uri.element.clone();

@@ -2,7 +2,7 @@
 
 mod accept;
 mod base;
-pub(crate) mod base_mapping;
+pub(crate) mod base_info;
 mod basic_auth;
 mod cache;
 mod cookies;
@@ -19,10 +19,11 @@ mod response;
 mod status;
 mod status_code_selector;
 pub(crate) mod uri;
+pub(crate) mod url_mapping;
 
 pub use accept::*;
 pub use base::Base;
-pub use base_mapping::{SourceBaseInfo, UrlMappings};
+pub use base_info::SourceBaseInfo;
 pub use basic_auth::{BasicAuthCredentials, BasicAuthSelector};
 pub use cache::CacheStatus;
 pub use cookies::CookieJar;
@@ -36,6 +37,7 @@ pub use request_error::RequestError;
 pub use response::{Response, ResponseBody};
 pub use status::Status;
 pub use status_code_selector::*;
+pub use url_mapping::UrlMappings;
 
 /// The lychee `Result` type
 pub type Result<T> = std::result::Result<T, crate::ErrorKind>;

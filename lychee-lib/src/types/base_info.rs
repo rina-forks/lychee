@@ -9,6 +9,7 @@ use crate::Base;
 use crate::ErrorKind;
 use crate::ResolvedInputSource;
 use crate::Uri;
+use crate::types::UrlMappings;
 use crate::types::uri::raw::RawUri;
 use crate::utils::url::ReqwestUrlExt;
 use url::PathSegmentsMut;
@@ -72,7 +73,6 @@ impl SourceBaseInfo {
     /// - A `file:` URL will yield [`SourceBaseInfo::NoRoot`].
     /// - For other URLs, a [`SourceBaseInfo::Full`] will be constructed from the URL's
     ///   origin and path.
-    ///
     pub fn from_source_url(url: &Url) -> Self {
         if url.scheme() == "file" {
             Self::NoRoot(url.clone())
@@ -129,7 +129,7 @@ impl SourceBaseInfo {
     ///
     /// # Errors
     ///
-    /// Returns an error if the text is an invalid URL, or the text is a
+    /// Returns an error if the text is an invalid URL, or if the text is a
     /// relative link and this [`SourceBaseInfo`] variant cannot resolve
     /// the relative link.
     pub fn parse_url_text(&self, text: &str) -> Result<Url, ErrorKind> {
@@ -194,45 +194,6 @@ impl SourceBaseInfo {
     // This function fails with an [`Err`] if:
     // - any of the provided arguments cannot be converted to a URL, or
     // - [`SourceBaseInfo::new`] fails.
-}
-
-pub struct UrlMappings {
-    /// List of tuples of `old_url`, `new_url`.
-    mappings: Vec<(Url, Url)>,
-}
-
-impl UrlMappings {
-    pub fn new(mappings: Vec<(Url, Url)>) -> Result<Self, ErrorKind> {
-        // TODO: check no repeated bases/roots on the same side.
-        // TODO: choose longest match if multiple could apply
-        let conflicting_mapping = mappings.iter().find(|(remote, local)| {
-            if remote == local {
-                false
-            } else {
-                remote.strip_prefix(local).is_some() || local.strip_prefix(remote).is_some()
-            }
-        });
-
-        match conflicting_mapping {
-            Some((base, root)) => Err(ErrorKind::InvalidBase(
-                base.to_string(),
-                format!("base cannot be parent or child of root-dir {root}"),
-            )),
-            None => Ok(Self { mappings }),
-        }
-    }
-
-    pub fn map_to_old_url(&self, url: &Url) -> Option<(&Url, String)> {
-        self.mappings
-            .iter()
-            .find_map(|(left, right)| url.strip_prefix(left).map(|subpath| (right, subpath)))
-    }
-
-    pub fn map_to_new_url(&self, url: &Url) -> Option<(&Url, String)> {
-        self.mappings
-            .iter()
-            .find_map(|(left, right)| url.strip_prefix(right).map(|subpath| (left, subpath)))
-    }
 }
 
 pub fn prepare_source_base_info(
