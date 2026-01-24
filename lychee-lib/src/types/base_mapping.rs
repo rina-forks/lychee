@@ -1,3 +1,7 @@
+//! Parses and resolves [`RawUri`] into into fully-qualified [`Uri`] by
+//! applying base URL and root dir mappings.
+//!
+
 use reqwest::Url;
 use std::path::Path;
 
@@ -9,109 +13,141 @@ use crate::types::uri::raw::RawUri;
 use crate::utils::url::ReqwestUrlExt;
 use url::PathSegmentsMut;
 
-/// Information needed for resolving relative URLs within a particular
-/// [`InputSource`]. The main entry point for constructing a `SourceBaseInfo`
-/// is [`SourceBaseInfo::from_source`]. Once constructed,
-/// [`SourceBaseInfo::parse_uri`] can be used to parse a URI found within
-/// the `InputSource`.
+/// Information used for resolving relative URLs within a particular
+/// input source. There should be a 1:1 correspondence between each
+/// `SourceBaseInfo` and its originating `InputSource`. The main entry
+/// point for constructing is [`SourceBaseInfo::from_source_url`].
 ///
-/// A `SourceBaseInfo` may or may not have an associated base which is used
-/// for resolving relative URLs. If no base is available, parsing relative
-/// and root-relative links will fail. If a base is available but it is not
-/// *well-founded*, then parsing root-relative links will fail. See
-/// [`SourceBaseInfo::from_source`] for a description of well-founded.
+/// Once constructed, [`SourceBaseInfo::parse_url_text`] can be used to
+/// parse and resolve a (possibly relative) URL obtained from within
+/// the associated `InputSource`.
+///
+/// A `SourceBaseInfo` may be built from input sources which cannot resolve
+/// relative links---for instance, stdin. It may also be built from input
+/// sources which can resolve *locally*-relative links, but not *root*-relative
+/// links.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct SourceBaseInfo(Option<(Url, String, bool)>);
-/// Tuple of `origin`, `subpath`, `allow_absolute`. The field `allow_absolute`
-/// is true if the base is well-founded.
+pub enum SourceBaseInfo {
+    /// No base information is available. This is for sources with no base
+    /// information, such as [`ResolvedInputSource::Stdin`]. This can
+    /// resolve no relative links, and only fully-qualified links will be
+    /// parsed successfully.
+    None,
 
-pub struct UrlMappings {
-    /// List of tuples of `old_url`, `new_url`.
-    mappings: Vec<(Url, Url)>,
-}
+    /// A base which cannot resolve root-relative links. This is for
+    /// `file:` URLs where the root directory is not known. As such, you can
+    /// traverse relative to the current URL (by traversing the filesystem),
+    /// but you cannot jump to the "root".
+    NoRoot(Url),
 
-impl UrlMappings {
-    pub fn new(mappings: Vec<(Url, Url)>) -> Result<Self, ErrorKind> {
-        // TODO: check no repeated bases/roots on the same side.
-        // TODO: choose longest match if multiple could apply
-        let conflicting_mapping = mappings.iter().find(|(remote, local)| {
-            if remote == local {
-                false
-            } else {
-                remote.strip_prefix(local).is_some() || local.strip_prefix(remote).is_some()
-            }
-        });
-
-        match conflicting_mapping {
-            Some((base, root)) => Err(ErrorKind::InvalidBase(
-                base.to_string(),
-                format!("base cannot be parent or child of root-dir {root}"),
-            )),
-            None => Ok(Self { mappings }),
-        }
-    }
-
-    pub fn map_to_old_url(&self, url: &Url) -> Option<(&Url, String)> {
-        self.mappings
-            .iter()
-            .find_map(|(left, right)| url.strip_prefix(left).map(|subpath| (right, subpath)))
-    }
-
-    pub fn map_to_new_url(&self, url: &Url) -> Option<(&Url, String)> {
-        self.mappings
-            .iter()
-            .find_map(|(left, right)| url.strip_prefix(right).map(|subpath| (left, subpath)))
-    }
+    /// A full base made up of `origin` and `path`. This can resolve
+    /// all kinds of relative links.
+    ///
+    /// All fully-qualified non-`file:` URLs fall into this case. For these,
+    /// `origin` and `path` are obtained by dividing the source URL into its
+    /// origin and path. When joined, `${origin}/${path}` should be equivalent
+    /// to the source's original URL.
+    ///
+    /// For `file:` URLs, the `origin` serves as the root which will be used
+    /// to resolve root-relative links (i.e., it's the root dir). The `path`
+    /// field is the subpath to a particular file within the root dir. This
+    /// is retained to resolve locally-relative links.
+    Full(Url, String),
 }
 
 impl SourceBaseInfo {
-    pub fn new(
-        origin: Url,
-        subpath: String,
-        supports_root_relative: bool,
-    ) -> Result<SourceBaseInfo, ErrorKind> {
-        Ok(Self(Some((origin, subpath, supports_root_relative))))
+    /// Constructs [`SourceBaseInfo::None`].
+    pub fn no_info() -> Self {
+        Self::None
     }
 
-    pub fn none() -> Self {
-        Self(None)
+    /// Constructs [`SourceBaseInfo::Full`] with the given fields.
+    pub fn full_info(origin: Url, path: String) -> Self {
+        Self::Full(origin, path)
     }
 
-    pub fn supports_root_relative(&self) -> bool {
-        self.0.as_ref().is_some_and(|x| x.2)
-    }
-
-    pub fn or_fallback(self, fallback: Self) -> Self {
-        if self.supports_root_relative() {
-            self
+    /// Constructs a [`SourceBaseInfo`], with the variant being determined by the given URL.
+    ///
+    /// - A [`Url::cannot_be_a_base`] URL will yield [`SourceBaseInfo::None`].
+    /// - A `file:` URL will yield [`SourceBaseInfo::NoRoot`].
+    /// - For other URLs, a [`SourceBaseInfo::Full`] will be constructed from the URL's
+    ///   origin and path.
+    ///
+    pub fn from_source_url(url: &Url) -> Self {
+        if url.scheme() == "file" {
+            Self::NoRoot(url.clone())
         } else {
-            fallback
+            let mut origin = url.clone();
+
+            match origin.path_segments_mut() {
+                Ok(mut segments) => segments.clear(),
+                Err(()) => return Self::no_info(),
+            };
+
+            let path = match url.path().strip_prefix('/') {
+                Some(path) => path.to_string(),
+                None => return Self::no_info(),
+            };
+
+            Self::Full(origin, path)
         }
     }
 
-    pub fn infer_source_base(url: &Url) -> Result<Self, ErrorKind> {
-        let origin = url
-            .join("/")
-            .map_err(|e| ErrorKind::ParseUrl(e, url.to_string()))?;
-        let subpath = origin
-            .make_relative(url)
-            .expect("failed make a url relative to its own origin root?!");
-        Self::new(origin, subpath, url.scheme() != "file")
+    pub fn supports_root_relative(&self) -> bool {
+        matches!(self, Self::Full(_, _))
     }
 
-    pub fn parse_raw_uri(&self, raw_uri: &RawUri) -> Result<Url, ErrorKind> {
-        match Uri::try_from(raw_uri.text.as_ref()) {
+    pub fn supports_locally_relative(&self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// Returns the [`SourceBaseInfo`] which has _more information_
+    /// between `self` and the given `fallback`.
+    ///
+    /// [`SourceBaseInfo::Full`] is preferred over [`SourceBaseInfo::NoRoot`]
+    /// which is preferred over [`SourceBaseInfo::None`]. If both `self`
+    /// and `fallback` are the same variant, then `self` will be preferred.
+    pub fn or_fallback(self, fallback: Self) -> Self {
+        match (self, fallback) {
+            (x @ Self::Full(_, _), _) => x,
+            (_, x @ Self::Full(_, _)) => x,
+            (x @ Self::NoRoot(_), _) => x,
+            (_, x @ Self::NoRoot(_)) => x,
+            (Self::None, Self::None) => Self::None,
+        }
+    }
+
+    /// Returns whether the text represents a relative link that is
+    /// relative to the domain root. Textually, it looks like `/this`.
+    fn is_root_relative(text: &str) -> bool {
+        let text = text.trim_ascii_start();
+        text.starts_with('/') && !text.starts_with("//")
+    }
+
+    /// Parses the given URL text into a fully-qualified URL, including
+    /// resolving relative links if supported by the current [`SourceBaseInfo`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the text is an invalid URL, or the text is a
+    /// relative link and this [`SourceBaseInfo`] variant cannot resolve
+    /// the relative link.
+    pub fn parse_url_text(&self, text: &str) -> Result<Url, ErrorKind> {
+        match Uri::try_from(text.as_ref()) {
             Ok(Uri { url }) => Ok(url),
             Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
-                _ if raw_uri.is_root_relative() && !self.supports_root_relative() => {
+                Self::NoRoot(_) if Self::is_root_relative(text) => {
                     // TODO: report more errors if a --root-dir is specified but URL falls outside of
                     // thingy
-                    Err(ErrorKind::InvalidBaseJoin(raw_uri.text.clone()))
+                    Err(ErrorKind::InvalidBaseJoin(text.to_string()))
                 }
-                Self(Some((origin, subpath, _))) => origin
-                    .join_rooted(&[subpath, &raw_uri.text])
-                    .map_err(|e| ErrorKind::ParseUrl(e, raw_uri.text.clone())),
-                Self(None) => Err(e),
+                Self::NoRoot(base) => base
+                    .join_rooted(&[&text])
+                    .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
+                Self::Full(origin, subpath) => origin
+                    .join_rooted(&[subpath, &text])
+                    .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
+                Self::None => Err(e),
             },
             Err(e) => Err(e),
         }
@@ -160,6 +196,45 @@ impl SourceBaseInfo {
     // - [`SourceBaseInfo::new`] fails.
 }
 
+pub struct UrlMappings {
+    /// List of tuples of `old_url`, `new_url`.
+    mappings: Vec<(Url, Url)>,
+}
+
+impl UrlMappings {
+    pub fn new(mappings: Vec<(Url, Url)>) -> Result<Self, ErrorKind> {
+        // TODO: check no repeated bases/roots on the same side.
+        // TODO: choose longest match if multiple could apply
+        let conflicting_mapping = mappings.iter().find(|(remote, local)| {
+            if remote == local {
+                false
+            } else {
+                remote.strip_prefix(local).is_some() || local.strip_prefix(remote).is_some()
+            }
+        });
+
+        match conflicting_mapping {
+            Some((base, root)) => Err(ErrorKind::InvalidBase(
+                base.to_string(),
+                format!("base cannot be parent or child of root-dir {root}"),
+            )),
+            None => Ok(Self { mappings }),
+        }
+    }
+
+    pub fn map_to_old_url(&self, url: &Url) -> Option<(&Url, String)> {
+        self.mappings
+            .iter()
+            .find_map(|(left, right)| url.strip_prefix(left).map(|subpath| (right, subpath)))
+    }
+
+    pub fn map_to_new_url(&self, url: &Url) -> Option<(&Url, String)> {
+        self.mappings
+            .iter()
+            .find_map(|(left, right)| url.strip_prefix(right).map(|subpath| (left, subpath)))
+    }
+}
+
 pub fn prepare_source_base_info(
     source: &ResolvedInputSource,
     root_and_base: Option<(&Path, Option<&Base>)>,
@@ -176,18 +251,18 @@ pub fn prepare_source_base_info(
     };
 
     let fallback_base = match fallback_base.map(Base::to_url).transpose()? {
-        None => SourceBaseInfo::none(),
-        Some(fallback_url) => SourceBaseInfo::new(fallback_url, String::new(), true)?,
+        None => SourceBaseInfo::no_info(),
+        Some(fallback_url) => SourceBaseInfo::full_info(fallback_url, String::new()),
     };
 
     let mappings = UrlMappings::new(root_and_base.into_iter().collect())?;
 
     let base_info = match source.to_url()? {
         Some(source_url) => match mappings.map_to_old_url(&source_url) {
-            Some((remote, subpath)) => SourceBaseInfo::new(remote.clone(), subpath, true)?,
-            None => SourceBaseInfo::infer_source_base(&source_url)?,
+            Some((remote, subpath)) => SourceBaseInfo::full_info(remote.clone(), subpath),
+            None => SourceBaseInfo::from_source_url(&source_url),
         },
-        None => SourceBaseInfo::none(),
+        None => SourceBaseInfo::no_info(),
     };
 
     let base_info = base_info.or_fallback(fallback_base);
@@ -200,7 +275,7 @@ pub fn parse_url_with_base_info(
     mappings: &UrlMappings,
     raw_uri: &RawUri,
 ) -> Result<Uri, ErrorKind> {
-    let url = base_info.parse_raw_uri(raw_uri)?;
+    let url = base_info.parse_url_text(&raw_uri.text)?;
 
     let mut url = match mappings.map_to_new_url(&url) {
         Some((local, subpath)) => local.join(&subpath).ok(),

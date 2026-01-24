@@ -21,15 +21,6 @@ pub struct RawUri {
     pub span: RawUriSpan,
 }
 
-impl RawUri {
-    /// Returns whether the `RawUri` represents a relative link that is
-    /// relative to the domain root. Textually, it looks like `/this`.
-    pub fn is_root_relative(&self) -> bool {
-        let text = self.text.trim_ascii_start();
-        text.starts_with('/') && !text.starts_with("//")
-    }
-}
-
 impl Display for RawUri {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} (Attribute: {:?})", self.text, self.attribute)
