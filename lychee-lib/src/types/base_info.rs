@@ -30,7 +30,7 @@ use url::PathSegmentsMut;
 /// sources which can resolve *locally*-relative links, but not *root*-relative
 /// links.
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize, Default)]
-#[serde(try_from = "&str")]
+#[serde(try_from = "String")]
 pub enum BaseInfo {
     /// No base information is available. This is for sources with no base
     /// information, such as [`ResolvedInputSource::Stdin`]. This can
@@ -251,6 +251,14 @@ impl TryFrom<&str> for BaseInfo {
             Ok(url) => BaseInfo::from_base_url(&url),
             Err(path) => BaseInfo::from_path(&PathBuf::from(path)),
         }
+    }
+}
+
+
+impl TryFrom<String> for BaseInfo {
+    type Error = ErrorKind;
+    fn try_from(value: String) -> Result<Self, ErrorKind> {
+        BaseInfo::try_from(value.as_ref())
     }
 }
 
