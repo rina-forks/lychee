@@ -22,6 +22,10 @@ pub(crate) trait ReqwestUrlExt {
     /// Relative links with non-`file:` bases can traverse anywhere as
     /// usual.
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
+
+    /// `url.strictly_relative_to(base) == path` such that
+    /// `base.join(path) == url`.
+    fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String>;
 }
 
 impl ReqwestUrlExt for Url {
@@ -45,7 +49,76 @@ impl ReqwestUrlExt for Url {
             Some(relative_to_base) => base.join(&relative_to_base),
             None => Ok(url.into_owned()),
         }
-        // .inspect(|x| println!("---> {x}"))
+    }
+
+    fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String> {
+        use std::iter::once;
+
+        if self.cannot_be_a_base()
+            || base.cannot_be_a_base()
+            || self.scheme() != base.scheme()
+            || self.authority() != base.authority()
+            || self.port() != base.port()
+        {
+            return None;
+        }
+
+        fn filename_with_query(url: &Url) -> String {
+            let last = url.path_segments().expect("!cannot_be_a_base").next_back();
+
+            let filename = match last {
+                Some("") | None => ".",
+                Some(filename) => filename,
+            };
+
+            match url.query() {
+                Some(query) => format!("{filename}?{query}"),
+                None => filename.to_string(),
+            }
+        }
+
+        let base_filename = filename_with_query(base);
+        let self_filename = filename_with_query(self);
+
+        let mut base_segments = base.path_segments().expect("!cannot_be_a_base");
+        base_segments.next_back();
+        let mut base_segments = base_segments.filter(|x| *x != "").peekable();
+
+        let mut self_segments = self.path_segments().expect("!cannot_be_a_base");
+        self_segments.next_back();
+        let mut self_segments = self_segments.filter(|x| *x != "").peekable();
+
+        while let Some(base_part) = base_segments.peek()
+            && let Some(self_part) = self_segments.peek()
+            && base_part == self_part
+        {
+            let _ = base_segments.next();
+            let _ = self_segments.next();
+        }
+
+        if base_segments.peek().is_some() && !traverse_up {
+            return None;
+        }
+
+        let filename_if_differs =
+            (self_filename != base_filename).then_some(self_filename.as_ref());
+
+        let remaining = (base_segments.map(|_| ".."))
+            .chain(self_segments)
+            .chain(filename_if_differs.into_iter())
+            .collect::<Vec<&str>>();
+        // NOTE: not minimal, e.g. will repeat filename if only query params differ
+
+        // println!("remaining: {remaining:?}");
+
+        let mut relative = remaining.join("/");
+
+        if let Some(fragment) = self.fragment() {
+            relative.push('#');
+            relative.push_str(fragment);
+        }
+
+        Some(relative)
     }
 }
 
@@ -157,5 +230,36 @@ mod test {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_strictly_relative_to() {
+        let test_urls = [
+            "https://a.com/a/b",
+            "https://a.com/a",
+            "https://a.com/a/",
+            "https://a.com/a/b/c/#boop",
+            "https://a.com/a/b/c/?query",
+        ];
+
+        for base in test_urls {
+            for url in test_urls {
+                let base = Url::parse(base).unwrap();
+                let url = Url::parse(url).unwrap();
+
+                let result = url.strictly_relative_to(&base, true);
+
+                println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
+                println!(
+                    "{}",
+                    result
+                        .as_ref()
+                        .and_then(|x| base.join(x).ok())
+                        .as_ref()
+                        .map_or("", Url::as_str)
+                );
+            }
+        }
+        assert!(false);
     }
 }
