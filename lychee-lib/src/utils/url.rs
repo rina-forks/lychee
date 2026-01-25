@@ -38,7 +38,7 @@ impl ReqwestUrlExt for Url {
         let base = self;
         let fake_base = match base.scheme() {
             "file" => {
-                let mut fake_base = base.join("/")?;
+                let mut fake_base = base.join("/.asdjifjdsaiofjdoisa")?;
                 fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
                 Some(fake_base)
             }
@@ -50,7 +50,10 @@ impl ReqwestUrlExt for Url {
             url = Cow::Owned(url.join(subpath)?);
         }
 
-        match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
+        match fake_base
+            .as_ref()
+            .and_then(|b| url.strictly_relative_to(b, false, true))
+        {
             Some(relative_to_base) => base.join(&relative_to_base),
             None => Ok(url.into_owned()),
         }
@@ -215,18 +218,18 @@ mod test {
             // file URLs without trailing / are kinda weird.
             // XXX: the cases with / and . should probably drop the file name
             ("file:///a/b/c", vec!["/../../a"], "file:///a/b/a"),
-            ("file:///a/b/c", vec!["/"], "file:///a/b/c"),
-            ("file:///a/b/c", vec![".?qq"], "file:///a/b/c?qq"),
+            ("file:///a/b/c", vec!["/"], "file:///a/b/"),
+            ("file:///a/b/c", vec![".?qq"], "file:///a/b/c?qq"), // XXX: still broken...
             ("file:///a/b/c", vec!["#x"], "file:///a/b/c#x"),
-            ("file:///a/b/c", vec!["./"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["./"], "file:///a/b/"),
             ("file:///a/b/c", vec!["c"], "file:///a/b/c"),
             // joining with d
             ("file:///a/b/c", vec!["d", "/../../a"], "file:///a/b/a"),
-            ("file:///a/b/c", vec!["d", "/"], "file:///a/b/c"),
-            ("file:///a/b/c", vec!["d", "."], "file:///a/b/c"),
-            ("file:///a/b/c", vec!["d", "./"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["d", "/"], "file:///a/b/"),
+            ("file:///a/b/c", vec!["d", "."], "file:///a/b/"),
+            ("file:///a/b/c", vec!["d", "./"], "file:///a/b/"),
             // joining with d/
-            ("file:///a/b/c", vec!["d/", "/"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["d/", "/"], "file:///a/b/"),
             ("file:///a/b/c", vec!["d/", "."], "file:///a/b/d/"),
             ("file:///a/b/c", vec!["d/", "./"], "file:///a/b/d/"),
         ];
