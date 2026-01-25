@@ -52,8 +52,6 @@ impl ReqwestUrlExt for Url {
     }
 
     fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String> {
-        use std::iter::once;
-
         if self.cannot_be_a_base()
             || base.cannot_be_a_base()
             || self.scheme() != base.scheme()
@@ -107,7 +105,9 @@ impl ReqwestUrlExt for Url {
             .chain(self_segments)
             .chain(filename_if_differs.into_iter())
             .collect::<Vec<&str>>();
-        // NOTE: not minimal, e.g. will repeat filename if only query params differ
+
+        // NOTE: not minimal. for instance, lots of `.` are inserted where they
+        // could be omitted.
 
         // println!("remaining: {remaining:?}");
 
@@ -236,10 +236,12 @@ mod test {
     fn test_strictly_relative_to() {
         let test_urls = [
             "https://a.com/a/b",
+            "https://a.com/a/b2",
             "https://a.com/a",
             "https://a.com/a/",
             "https://a.com/a/b/c/#boop",
             "https://a.com/a/b/c/?query",
+            "https://a.com/a/b/c/?QUERY2",
         ];
 
         for base in test_urls {
