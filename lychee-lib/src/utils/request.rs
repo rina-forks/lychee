@@ -52,7 +52,7 @@ fn try_parse_into_uri(
     // TODO: this conversion should be hoisted up the call stack
     let root_dir = root_dir.and_then(|x| Url::from_directory_path(x).ok());
     Ok(base
-        .parse_url_text(&raw_uri.text, root_dir.as_ref())?
+        .parse_url_text_with_root_dir(&raw_uri.text, root_dir.as_ref())?
         .into())
 }
 

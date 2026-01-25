@@ -215,7 +215,6 @@ impl BaseInfo {
     /// [`BaseInfo::Full`] is preferred over [`BaseInfo::NoRoot`]
     /// which is preferred over [`BaseInfo::None`]. If both `self`
     /// and `fallback` are the same variant, then `self` will be preferred.
-
     pub fn or_fallback<'a>(&'a self, fallback: &'a Self) -> &'a Self {
         match (self, fallback) {
             (x @ Self::Full(_, _), _) => x,
@@ -241,26 +240,17 @@ impl BaseInfo {
     /// Returns an error if the text is an invalid URL, or if the text is a
     /// relative link and this [`BaseInfo`] variant cannot resolve
     /// the relative link.
-    pub fn parse_url_text(&self, text: &str, root_dir: Option<&Url>) -> Result<Url, ErrorKind> {
-        // HACK: if root-dir is specified, apply it by fudging around with
-        // file:// URLs.
-        let fake_base_info = match root_dir {
-            Some(root_dir) if self.scheme() == Some("file") && Self::is_root_relative(text) => {
-                Cow::Owned(Self::full_info(root_dir.clone(), String::new()))
-            }
-            Some(_) | None => Cow::Borrowed(self),
-        };
-
+    pub fn parse_url_text(&self, text: &str) -> Result<Url, ErrorKind> {
         let mut url = match Uri::try_from(text.as_ref()) {
             Ok(Uri { url }) => Ok(url),
-            Err(e @ ErrorKind::ParseUrl(_, _)) => match *fake_base_info {
+            Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
                 Self::NoRoot(_) if Self::is_root_relative(text) => {
                     Err(ErrorKind::InvalidBaseJoin(text.to_string()))
                 }
-                Self::NoRoot(ref base) => base
+                Self::NoRoot(base) => base
                     .join(text)
                     .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
-                Self::Full(ref origin, ref subpath) => origin
+                Self::Full(origin, subpath) => origin
                     .join_rooted(&[subpath, text])
                     .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
                 Self::None => Err(e),
@@ -277,6 +267,35 @@ impl BaseInfo {
         }
 
         Ok(url)
+    }
+
+    /// Parses the given URL text into a fully-qualified URL, including
+    /// resolving relative links if supported by the current [`BaseInfo`]
+    /// and applying the given root-dir if necessary.
+    ///
+    /// The root-dir is applied if the current BaseInfo is a `file:` URL
+    /// and if the given text is a root-relative link. In these cases, the
+    /// given `root_dir` will take effect instead of the original BaseInfo.
+    ///
+    /// # Errors
+    ///
+    /// Propagates errors from [`BaseInfo::parse_url_text`].
+    pub fn parse_url_text_with_root_dir(
+        &self,
+        text: &str,
+        root_dir: Option<&Url>,
+    ) -> Result<Url, ErrorKind> {
+        // HACK: if root-dir is specified, apply it by fudging around with
+        // file:// URLs. eventually, someone up the stack should construct
+        // the BaseInfo::Full for root-dir and this function should be deleted.
+        let fake_base_info = match root_dir {
+            Some(root_dir) if self.scheme() == Some("file") && Self::is_root_relative(text) => {
+                Cow::Owned(Self::full_info(root_dir.clone(), String::new()))
+            }
+            Some(_) | None => Cow::Borrowed(self),
+        };
+
+        fake_base_info.parse_url_text(text)
     }
 }
 
