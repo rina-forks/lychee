@@ -17,7 +17,7 @@ use http::HeaderMap;
 use par_stream::ParStreamExt;
 use reqwest::Client;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Collector keeps the state of link collection
 /// It drives the link extraction from inputs
@@ -75,22 +75,25 @@ impl Collector {
     pub fn new(root_dir: Option<PathBuf>, base: BaseInfo) -> LycheeResult<Self> {
         // HACK: if root-dir and base-url are given together and the base is a full file path,
         // then join the root dir onto the base to match old behaviour.........
-        // this will have big encoding problems
         let (root_dir, base) = match (root_dir, base) {
             (Some(root_dir), BaseInfo::Full(url, path))
                 if url.scheme() == "file" && path.is_empty() =>
             {
-                let root_dir_path = root_dir.join(""); // for trailing slash
-                let root_dir_str = root_dir_path.to_string_lossy();
-                let url = url
-                    .join(root_dir_str.trim_start_matches('/'))
-                    .map_err(|e| ErrorKind::ParseUrl(e, root_dir_str.to_string()))?;
-                (None, BaseInfo::full_info(url, String::new()))
+                let root_dir = root_dir
+                    .strip_prefix("/")
+                    .map(Path::to_path_buf)
+                    .unwrap_or(root_dir);
+                match url.to_file_path() {
+                    Ok(base_path) => (
+                        Some(base_path.join(root_dir).join("")),
+                        BaseInfo::full_info(url, path),
+                    ),
+                    Err(()) => (Some(root_dir), BaseInfo::full_info(url, path)),
+                }
             }
             (Some(root_dir), base) => (
                 Some(
-                    root_dir
-                        .canonicalize()
+                    std::path::absolute(&root_dir)
                         .map_err(|e| ErrorKind::InvalidRootDir(root_dir, e))?,
                 ),
                 base.clone(),
