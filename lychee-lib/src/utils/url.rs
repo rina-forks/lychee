@@ -109,16 +109,23 @@ mod test {
             ("file:///root/", vec!["///new-root"], "file:///new-root"),
             ("file:///root/", vec!["//a.com/boop"], "file://a.com/boop"),
             ("https://root/", vec!["//a.com/boop"], "https://a.com/boop"),
-            // file URLs without trailing / are not a high priority and are
-            // kinda weird - the / amd . cases should drop the filename
+            // file URLs without trailing / are kinda weird.
+            // XXX: the cases with / and . should probably drop the file name
             ("file:///a/b/c", vec!["/../../a"], "file:///a/b/a"),
             ("file:///a/b/c", vec!["/"], "file:///a/b/c"),
             ("file:///a/b/c", vec![".?qq"], "file:///a/b/c?qq"),
+            ("file:///a/b/c", vec!["#x"], "file:///a/b/c#x"),
             ("file:///a/b/c", vec!["./"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["c"], "file:///a/b/c"),
+            // joining with d
             ("file:///a/b/c", vec!["d", "/../../a"], "file:///a/b/a"),
             ("file:///a/b/c", vec!["d", "/"], "file:///a/b/c"),
             ("file:///a/b/c", vec!["d", "."], "file:///a/b/c"),
             ("file:///a/b/c", vec!["d", "./"], "file:///a/b/c"),
+            // joining with d/
+            ("file:///a/b/c", vec!["d/", "/"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["d/", "."], "file:///a/b/d/"),
+            ("file:///a/b/c", vec!["d/", "./"], "file:///a/b/d/"),
         ];
 
         for (base, subpaths, expected) in test_urls_and_expected {
@@ -129,6 +136,24 @@ mod test {
                     .join_rooted(&subpaths[..])
                     .unwrap()
                     .to_string(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_join_default() {
+        let test_cases = [
+            ("file:///a/b/c", "/", "file:///"),
+            ("file:///a/b/c", ".?qq", "file:///a/b/?qq"),
+            ("file:///a/b/c", "#x", "file:///a/b/c#x"),
+            ("file:///a/b/c", "./", "file:///a/b/"),
+        ];
+
+        for (base, subpath, expected) in test_cases {
+            println!("base={base}, subpath={subpath:?}, expected={expected}");
+            assert_eq!(
+                Url::parse(base).unwrap().join(subpath).unwrap().to_string(),
                 expected
             );
         }
