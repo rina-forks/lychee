@@ -442,6 +442,7 @@ mod cli {
 
         cargo_bin_cmd!()
             .arg("--offline")
+            .arg("--verbose")
             .arg("--root-dir")
             .arg("/resolve_paths")
             .arg("--base-url")
@@ -451,7 +452,28 @@ mod cli {
             .assert()
             .success()
             .stdout(contains("3 Total"))
-            .stdout(contains("3 OK"));
+            .stdout(contains("3 OKa"));
+
+    }
+
+    #[test]
+    fn test_resolve_paths_from_root_dir_and_local_base_url() {
+        let dir = fixtures_path!();
+
+        cargo_bin_cmd!()
+            .arg("--dump")
+            .arg("--root-dir")
+            .arg("/root")
+            .arg("--base-url")
+            .arg("/base/")
+            .arg(dir.join("resolve_paths").join("index2.html"))
+            .env_clear()
+            .assert()
+            .success()
+            .stdout(contains("file:///base/same%20page.html%23x"))
+            .stdout(contains("file:///root"))
+            .stdout(contains("file:///root/another%20page%23y"))
+            .stdout(contains("file:///root/abouta"));
     }
 
     #[test]
@@ -3291,5 +3313,24 @@ The config file should contain every possible key for documentation purposes."
             .assert()
             .success()
             .stdout(contains("https://example.com"));
+    }
+
+    #[test]
+    fn test_local_base_url_bug_1896() -> Result<()> {
+        let dir = tempdir()?;
+
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--dump")
+            .arg("--base-url")
+            .arg(dir.path())
+            .arg("--default-extension")
+            .arg("md")
+            .write_stdin("[a](b.html#a)")
+            .assert()
+            .success()
+            .stdout(contains("b.html%23a"));
+
+        Ok(())
     }
 }

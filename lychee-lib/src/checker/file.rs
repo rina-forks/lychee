@@ -97,6 +97,7 @@ impl FileChecker {
         };
 
         let path = self.resolve_base(&path);
+        println!("{:?}", path);
         let path = self.resolve_local_path(&path, uri);
         match path {
             Ok(path) => self.check_file(path.as_ref(), uri).await,
