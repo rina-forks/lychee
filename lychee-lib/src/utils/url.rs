@@ -123,14 +123,17 @@ impl ReqwestUrlExt for Url {
         //     .next_back()
         //     .is_some_and(|x| x == "");
 
-        if !remaining.is_empty() {
-            if self_filename == "." || self_filename.starts_with(".?") {
-                remaining.push(self_filename.trim_start_matches('.'))
+        let needs_filename = !remaining.is_empty() || self_filename != base_filename;
+        let dot_can_be_omitted = !remaining.is_empty();
+
+        if needs_filename {
+            remaining.push(if dot_can_be_omitted && self_filename == "." {
+                ""
+            } else if self_filename.starts_with(".?") {
+                self_filename.trim_start_matches('.')
             } else {
-                remaining.push(self_filename.as_ref());
-            }
-        } else if self_filename != base_filename {
-            remaining.push(self_filename.as_ref());
+                self_filename.as_ref()
+            })
         }
 
         // NOTE: not minimal. for instance, lots of `.` are inserted where they
@@ -272,6 +275,8 @@ mod test {
             "https://a.com/a/b/c/?QUERY2",
             "https://a.com/a///b/c",
             "https://a.com/x//b/c",
+            "https://a.com/x/a",
+            "https://a.com/x2/a",
         ];
 
         for base in test_urls {
