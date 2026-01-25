@@ -132,19 +132,38 @@ impl BaseInfo {
 
     /// If this is a [`BaseInfo::NoRoot`], promote it to a [`BaseInfo::Full`]
     /// by using the filesystem root as the "origin" for root-relative links.
+    /// Root-relative links will go to the filesystem root.
     ///
     /// Generally, this function should be avoided in favour of a more explicit
     /// user-provided root directory. The filesystem root is rarely a good place
     /// to look for files.
     ///
     /// Makes no change to other [`BaseInfo`] variants.
-    pub fn use_fs_root_as_origin(self) -> Self {
-        let Self::NoRoot(url) = self else { return self };
+    pub fn use_fs_root_as_origin(&self) -> Cow<'_, Self> {
+        let Self::NoRoot(url) = self else {
+            return Cow::Borrowed(self);
+        };
 
         let (fs_root, subpath) = Self::split_url_origin_and_path(&url)
             .expect("splitting up a NoRoot file:// URL should work");
 
-        Self::full_info(fs_root, subpath)
+        Cow::Owned(Self::full_info(fs_root, subpath))
+    }
+
+    /// If this is a [`BaseInfo::NoRoot`], promote it to a [`BaseInfo::Full`]
+    /// by using the entire filesystem path as the "origin" for root-relative links.
+    /// Root-relative links will go to the URL that was previously within `NoRoot`.
+    ///
+    /// Generally, this function should be avoided in favour of a more explicit
+    /// user-provided root directory.
+    ///
+    /// Makes no change to other [`BaseInfo`] variants.
+    pub fn use_fs_path_as_origin(&self) -> Cow<'_, Self> {
+        let Self::NoRoot(url) = self else {
+            return Cow::Borrowed(self);
+        };
+
+        Cow::Owned(Self::full_info(url.clone(), String::new()))
     }
 
     /// Returns the URL for the current [`BaseInfo`], joining the origin and path
@@ -197,13 +216,14 @@ impl BaseInfo {
     /// [`BaseInfo::Full`] is preferred over [`BaseInfo::NoRoot`]
     /// which is preferred over [`BaseInfo::None`]. If both `self`
     /// and `fallback` are the same variant, then `self` will be preferred.
-    pub fn or_fallback(self, fallback: Self) -> Self {
+
+    pub fn or_fallback<'a>(&'a self, fallback: &'a Self) -> &'a Self {
         match (self, fallback) {
             (x @ Self::Full(_, _), _) => x,
             (_, x @ Self::Full(_, _)) => x,
             (x @ Self::NoRoot(_), _) => x,
             (_, x @ Self::NoRoot(_)) => x,
-            (Self::None, Self::None) => Self::None,
+            (x @ Self::None, Self::None) => x,
         }
     }
 
@@ -268,6 +288,11 @@ impl TryFrom<&str> for BaseInfo {
     /// a URL or a filesystem path. In both cases, the string must
     /// represent a valid base (i.e., not resulting in [`BaseInfo::None`]).
     ///
+    /// Note that this makes a distinction between filesystem paths as paths
+    /// and filesystem paths as URLs. When specified as a path, they will
+    /// become [`BaseInfo::Full`] but when specified as a URL, they will
+    /// become [`BaseInfo::NoRoot`].
+    ///
     /// Additionally, the empty string is accepted and will be parsed to
     /// [`BaseInfo::None`].
     fn try_from(value: &str) -> Result<Self, ErrorKind> {
@@ -276,7 +301,8 @@ impl TryFrom<&str> for BaseInfo {
         }
         match utils::url::parse_url_or_path(value) {
             Ok(url) => BaseInfo::from_base_url(&url),
-            Err(path) => BaseInfo::from_path(&PathBuf::from(path)),
+            Err(path) => BaseInfo::from_path(&PathBuf::from(path))
+                .map(|x| x.use_fs_path_as_origin().into_owned()),
         }
     }
 }

@@ -106,14 +106,27 @@ pub(crate) fn create(
     uris: Vec<RawUri>,
     source: &ResolvedInputSource,
     root_dir: Option<&PathBuf>,
-    base: &BaseInfo,
+    fallback_base: &BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Vec<Result<Request, RequestError>> {
+    let source_base = match source.to_url() {
+        Ok(None) => BaseInfo::no_info(),
+        Ok(Some(url)) => BaseInfo::from_source_url(&url),
+        Err(e) => {
+            // TODO: GetInputContent is not quite the right error.
+            return vec![Err(RequestError::GetInputContent(source.clone().into(), e))];
+        }
+    };
+
+    // TODO: avoid use_fs_root_as_origin once base-url sementics are clarified
+    let fallback_base = fallback_base.use_fs_root_as_origin();
+    let base = source_base.or_fallback(&fallback_base);
+
     let mut requests = HashSet::<Request>::new();
     let mut errors = Vec::<RequestError>::new();
 
     for raw_uri in uris {
-        let result = create_request(&raw_uri, source, root_dir, base, extractor);
+        let result = create_request(&raw_uri, source, root_dir, &base, extractor);
         match result {
             Ok(request) => {
                 requests.insert(request);

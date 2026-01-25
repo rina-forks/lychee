@@ -249,23 +249,12 @@ impl Collector {
                 async move {
                     let content = content?;
 
-                    let source_base = content
-                        .source
-                        .to_url()
-                        .map_err(|e| {
-                            RequestError::GetInputContent(content.source.clone().into(), e)
-                        })?
-                        .as_ref()
-                        .map_or(BaseInfo::no_info(), BaseInfo::from_source_url);
-
-                    let base = source_base.or_fallback(global_base.use_fs_root_as_origin());
-
                     let uris: Vec<RawUri> = extractor.extract(&content);
                     let requests = request::create(
                         uris,
                         &content.source,
                         root_dir.as_ref(),
-                        &base,
+                        &global_base,
                         basic_auth_extractor.as_ref(),
                     );
                     Result::Ok(stream::iter(requests))
