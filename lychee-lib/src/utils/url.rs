@@ -238,10 +238,13 @@ mod test {
             "https://a.com/a/b",
             "https://a.com/a/b2",
             "https://a.com/a",
+            "https://a.com",
             "https://a.com/a/",
             "https://a.com/a/b/c/#boop",
             "https://a.com/a/b/c/?query",
             "https://a.com/a/b/c/?QUERY2",
+            "https://a.com/a//b/c/",
+            "https://a.com/a/b/c//",
         ];
 
         for base in test_urls {
