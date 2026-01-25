@@ -25,7 +25,12 @@ pub(crate) trait ReqwestUrlExt {
 
     /// `url.strictly_relative_to(base) == path` such that
     /// `base.join(path) == url`.
-    fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String>;
+    fn strictly_relative_to(
+        &self,
+        base: &Url,
+        traverse_up: bool,
+        match_double_slashes: bool,
+    ) -> Option<String>;
 }
 
 impl ReqwestUrlExt for Url {
@@ -51,7 +56,12 @@ impl ReqwestUrlExt for Url {
         }
     }
 
-    fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String> {
+    fn strictly_relative_to(
+        &self,
+        base: &Url,
+        traverse_up: bool,
+        match_double_slashes: bool,
+    ) -> Option<String> {
         if self.cannot_be_a_base()
             || base.cannot_be_a_base()
             || self.scheme() != base.scheme()
@@ -80,11 +90,15 @@ impl ReqwestUrlExt for Url {
 
         let mut base_segments = base.path_segments().expect("!cannot_be_a_base");
         base_segments.next_back();
-        let mut base_segments = base_segments.filter(|x| *x != "").peekable();
+        let mut base_segments = base_segments
+            .filter(|x| if match_double_slashes { true } else { *x != "" })
+            .peekable();
 
         let mut self_segments = self.path_segments().expect("!cannot_be_a_base");
         self_segments.next_back();
-        let mut self_segments = self_segments.filter(|x| *x != "").peekable();
+        let mut self_segments = self_segments
+            .filter(|x| if match_double_slashes { true } else { *x != "" })
+            .peekable();
 
         while let Some(base_part) = base_segments.peek()
             && let Some(self_part) = self_segments.peek()
@@ -98,13 +112,24 @@ impl ReqwestUrlExt for Url {
             return None;
         }
 
-        let filename_if_differs =
-            (self_filename != base_filename).then_some(self_filename.as_ref());
-
-        let remaining = (base_segments.map(|_| ".."))
+        let mut remaining = (base_segments.map(|_| ".."))
             .chain(self_segments)
-            .chain(filename_if_differs.into_iter())
+            .map(|x| if x == "" { "./" } else { x })
             .collect::<Vec<&str>>();
+
+        let number_of_trailing_slashes_in_self = self
+            .path_segments()
+            .expect("!cannot_be_a_base")
+            .rev()
+            .take_while(|x| *x == "")
+            .count();
+
+        remaining.extend(std::iter::repeat_n(".", number_of_trailing_slashes_in_self));
+
+        // maybe it would be easier to unconditionally append filename...
+        if self_filename != base_filename || number_of_trailing_slashes_in_self > 0 {
+            remaining.push(self_filename.as_ref());
+        }
 
         // NOTE: not minimal. for instance, lots of `.` are inserted where they
         // could be omitted.
@@ -233,7 +258,7 @@ mod test {
     }
 
     #[test]
-    fn test_strictly_relative_to() {
+    fn test_strictly_relative_to_basic() {
         let test_urls = [
             "https://a.com/a/b",
             "https://a.com/a/b2",
@@ -243,8 +268,7 @@ mod test {
             "https://a.com/a/b/c/#boop",
             "https://a.com/a/b/c/?query",
             "https://a.com/a/b/c/?QUERY2",
-            "https://a.com/a//b/c/",
-            "https://a.com/a/b/c//",
+            "https://a.com/a///b/c",
         ];
 
         for base in test_urls {
@@ -252,7 +276,7 @@ mod test {
                 let base = Url::parse(base).unwrap();
                 let url = Url::parse(url).unwrap();
 
-                let result = url.strictly_relative_to(&base, true);
+                let result = url.strictly_relative_to(&base, true, true);
 
                 println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
                 println!(
@@ -263,8 +287,46 @@ mod test {
                         .as_ref()
                         .map_or("", Url::as_str)
                 );
+
+                if let Some(result) = result {
+                    assert_eq!(base.join(&result).unwrap(), url);
+                }
             }
         }
-        assert!(false);
+    }
+
+    #[test]
+    fn test_strictly_relative_to_doubled() {
+        let test_urls = [
+            "https://a.com/",
+            "https://a.com//",
+            "https://a.com///",
+            "https://a.com///a",
+            "https://a.com/a//",
+            "https://a.com//a//b//",
+        ];
+
+        for base in test_urls {
+            for url in test_urls {
+                let base = Url::parse(base).unwrap();
+                let url = Url::parse(url).unwrap();
+
+                let result = url.strictly_relative_to(&base, true, true);
+
+                println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
+                println!(
+                    "{}",
+                    result
+                        .as_ref()
+                        .and_then(|x| base.join(x).ok())
+                        .as_ref()
+                        .map_or("", Url::as_str)
+                );
+
+                if let Some(result) = result {
+                    assert_eq!(base.join(&result).unwrap(), url);
+                }
+            }
+        }
     }
 }
