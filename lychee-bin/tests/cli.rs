@@ -442,18 +442,16 @@ mod cli {
 
         cargo_bin_cmd!()
             .arg("--offline")
-            .arg("--verbose")
             .arg("--root-dir")
             .arg("/resolve_paths")
             .arg("--base-url")
             .arg(&dir)
-            .arg(dir.join("resolve_paths").join("index.html"))
+            .arg(dir.join("resolve_paths").join("index2.html"))
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("3 Total"))
-            .stdout(contains("3 OKa"));
-
+            .stdout(contains("5 Total"))
+            .stdout(contains("5 OK"));
     }
 
     #[test]
@@ -470,10 +468,11 @@ mod cli {
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("file:///base/same%20page.html%23x"))
-            .stdout(contains("file:///root"))
-            .stdout(contains("file:///root/another%20page%23y"))
-            .stdout(contains("file:///root/abouta"));
+            .stdout(contains("file:///base/root/index.html"))
+            .stdout(contains("file:///base/root"))
+            .stdout(contains("file:///base/root/another%20page#y"))
+            .stdout(contains("file:///base/root/same%20folder.html#x"))
+            .stdout(contains("file:///base/root/about"));
     }
 
     #[test]
@@ -3329,7 +3328,7 @@ The config file should contain every possible key for documentation purposes."
             .write_stdin("[a](b.html#a)")
             .assert()
             .success()
-            .stdout(contains("b.html%23a"));
+            .stdout(contains("b.html#a"));
 
         Ok(())
     }
