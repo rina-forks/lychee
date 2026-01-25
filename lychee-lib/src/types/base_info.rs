@@ -130,6 +130,23 @@ impl BaseInfo {
         Self::from_base_url(&url)
     }
 
+    /// If this is a [`BaseInfo::NoRoot`], promote it to a [`BaseInfo::Full`]
+    /// by using the filesystem root as the "origin" for root-relative links.
+    ///
+    /// Generally, this function should be avoided in favour of a more explicit
+    /// user-provided root directory. The filesystem root is rarely a good place
+    /// to look for files.
+    ///
+    /// Makes no change to other [`BaseInfo`] variants.
+    pub fn use_fs_root_as_origin(self) -> Self {
+        let Self::NoRoot(url) = self else { return self };
+
+        let (fs_root, subpath) = Self::split_url_origin_and_path(&url)
+            .expect("splitting up a NoRoot file:// URL should work");
+
+        Self::full_info(fs_root, subpath)
+    }
+
     /// Returns the URL for the current [`BaseInfo`], joining the origin and path
     /// if needed.
     pub fn to_url(&self) -> Option<Url> {
@@ -215,14 +232,14 @@ impl BaseInfo {
             Some(_) | None => Cow::Borrowed(self),
         };
 
-        match Uri::try_from(text.as_ref()) {
+        let mut url = match Uri::try_from(text.as_ref()) {
             Ok(Uri { url }) => Ok(url),
             Err(e @ ErrorKind::ParseUrl(_, _)) => match *fake_base_info {
                 Self::NoRoot(_) if Self::is_root_relative(text) => {
                     Err(ErrorKind::InvalidBaseJoin(text.to_string()))
                 }
                 Self::NoRoot(ref base) => base
-                    .join_rooted(&[text])
+                    .join(text)
                     .map_err(|e| ErrorKind::ParseUrl(e, text.to_string())),
                 Self::Full(ref origin, ref subpath) => origin
                     .join_rooted(&[subpath, text])
@@ -230,7 +247,17 @@ impl BaseInfo {
                 Self::None => Err(e),
             },
             Err(e) => Err(e),
+        }?;
+
+        // BACKWARDS COMPAT: delete trailing slash for file urls
+        if url.scheme() == "file" {
+            let _ = url
+                .path_segments_mut()
+                .as_mut()
+                .map(PathSegmentsMut::pop_if_empty);
         }
+
+        Ok(url)
     }
 }
 
@@ -253,7 +280,6 @@ impl TryFrom<&str> for BaseInfo {
         }
     }
 }
-
 
 impl TryFrom<String> for BaseInfo {
     type Error = ErrorKind;
