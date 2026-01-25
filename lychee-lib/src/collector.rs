@@ -1,11 +1,10 @@
 use crate::ErrorKind;
-use crate::InputSource;
 use crate::Preprocessor;
 use crate::filter::PathExcludes;
 
 use crate::types::resolver::UrlContentResolver;
 use crate::{
-    Base, BaseInfo, Input, LycheeResult, Request, RequestError, basic_auth::BasicAuthExtractor,
+    BaseInfo, Input, LycheeResult, Request, RequestError, basic_auth::BasicAuthExtractor,
     extract::Extractor, types::FileExtensions, types::uri::raw::RawUri, utils::request,
 };
 use futures::TryStreamExt;

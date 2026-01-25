@@ -1,13 +1,11 @@
-use percent_encoding::percent_decode_str;
 use reqwest::Url;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{
-    Base, BaseInfo, BasicAuthCredentials, ErrorKind, LycheeResult, Request, RequestError, Uri,
+    BaseInfo, BasicAuthCredentials, LycheeResult, Request, RequestError, Uri,
     basic_auth::BasicAuthExtractor,
     types::{ResolvedInputSource, uri::raw::RawUri},
-    utils::{path, url},
 };
 
 /// Extract basic auth credentials for a given URL.
@@ -26,7 +24,7 @@ fn create_request(
     base: &BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> LycheeResult<Request> {
-    let uri = try_parse_into_uri(raw_uri, source, root_dir, base)?;
+    let uri = try_parse_into_uri(raw_uri, root_dir, base)?;
     let source = source.clone();
     let element = raw_uri.element.clone();
     let attribute = raw_uri.attribute.clone();
@@ -48,7 +46,6 @@ fn create_request(
 /// - If the source is not a file path (i.e. the URI type is not supported).
 fn try_parse_into_uri(
     raw_uri: &RawUri,
-    source: &ResolvedInputSource,
     root_dir: Option<&Path>,
     base: &BaseInfo,
 ) -> LycheeResult<Uri> {
@@ -57,44 +54,6 @@ fn try_parse_into_uri(
     Ok(base
         .parse_url_text(&raw_uri.text, root_dir.as_ref())?
         .into())
-}
-
-// Taken from https://github.com/getzola/zola/blob/master/components/link_checker/src/lib.rs
-pub(crate) fn is_anchor(text: &str) -> bool {
-    text.starts_with('#')
-}
-
-/// Create a URI from a file path
-///
-/// # Errors
-///
-/// - If the link text is an anchor and the file name cannot be extracted from the file path.
-/// - If the path cannot be resolved.
-/// - If the resolved path cannot be converted to a URL.
-fn create_uri_from_file_path(
-    file_path: &Path,
-    link_text: &str,
-    ignore_absolute_local_links: bool,
-) -> LycheeResult<Uri> {
-    let target_path = if is_anchor(link_text) {
-        // For anchors, we need to append the anchor to the file name.
-        let file_name = file_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| ErrorKind::InvalidFile(file_path.to_path_buf()))?;
-
-        format!("{file_name}{link_text}")
-    } else {
-        link_text.to_string()
-    };
-    let Ok(constructed_url) =
-        resolve_and_create_url(file_path, &target_path, ignore_absolute_local_links)
-    else {
-        return Err(ErrorKind::InvalidPathToUri(target_path));
-    };
-    Ok(Uri {
-        url: constructed_url,
-    })
 }
 
 /// Create requests out of the collected URLs.
@@ -145,60 +104,14 @@ pub(crate) fn create(
         .collect()
 }
 
-/// Create a URI from a path
-///
-/// `src_path` is the path of the source file.
-/// `dest_path` is the path being linked to.
-/// The optional `base_uri` specifies the base URI to resolve the destination path against.
-///
-/// # Errors
-///
-/// - If the percent-decoded destination path cannot be decoded as UTF-8.
-/// - The path cannot be resolved
-/// - The resolved path cannot be converted to a URL.
-fn resolve_and_create_url(
-    src_path: &Path,
-    dest_path: &str,
-    ignore_absolute_local_links: bool,
-) -> LycheeResult<Url> {
-    let (dest_path, fragment) = url::remove_get_params_and_separate_fragment(dest_path);
-
-    // Decode the destination path to avoid double-encoding
-    // This addresses the issue mentioned in the original comment about double-encoding
-    let decoded_dest = percent_decode_str(dest_path).decode_utf8()?;
-
-    let Ok(Some(resolved_path)) = path::resolve(
-        src_path,
-        &PathBuf::from(&*decoded_dest),
-        ignore_absolute_local_links,
-    ) else {
-        return Err(ErrorKind::InvalidPathToUri(decoded_dest.to_string()));
-    };
-
-    let Ok(mut url) = Url::from_file_path(&resolved_path) else {
-        return Err(ErrorKind::InvalidUrlFromPath(resolved_path.clone()));
-    };
-
-    url.set_fragment(fragment);
-    Ok(url)
-}
-
-fn prepend_root_dir_if_absolute_local_link(text: &str, root_dir: Option<&PathBuf>) -> String {
-    if text.starts_with('/')
-        && let Some(path) = root_dir
-        && let Some(path_str) = path.to_str()
-    {
-        return format!("{path_str}{text}");
-    }
-    text.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
     use std::num::NonZeroUsize;
+    use std::path::PathBuf;
 
-    use crate::types::uri::raw::RawUriSpan;
+    use crate::Request;
+    use crate::types::uri::raw::{RawUri, RawUriSpan};
 
     use super::*;
 
@@ -231,19 +144,6 @@ mod tests {
                 column: None,
             },
         }
-    }
-
-    #[test]
-    fn test_is_anchor() {
-        assert!(is_anchor("#anchor"));
-        assert!(!is_anchor("notan#anchor"));
-    }
-
-    #[test]
-    fn test_create_uri_from_path() {
-        let result =
-            resolve_and_create_url(&PathBuf::from("/README.md"), "test+encoding", true).unwrap();
-        assert_eq!(result.as_str(), "file:///test+encoding");
     }
 
     #[test]
@@ -588,10 +488,9 @@ mod tests {
     #[test]
     fn test_parse_relative_path_into_uri() {
         let base = BaseInfo::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
-        let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let raw_uri = raw_uri("relative.html");
-        let uri = try_parse_into_uri(&raw_uri, &source, None, &base).unwrap();
+        let uri = try_parse_into_uri(&raw_uri, None, &base).unwrap();
 
         assert_eq!(uri.url.as_str(), "file:///tmp/lychee/relative.html");
     }
@@ -599,41 +498,10 @@ mod tests {
     #[test]
     fn test_parse_absolute_path_into_uri() {
         let base = BaseInfo::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
-        let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let raw_uri = raw_uri("absolute.html");
-        let uri = try_parse_into_uri(&raw_uri, &source, None, &base).unwrap();
+        let uri = try_parse_into_uri(&raw_uri, None, &base).unwrap();
 
         assert_eq!(uri.url.as_str(), "file:///tmp/lychee/absolute.html");
-    }
-
-    #[test]
-    fn test_prepend_with_absolute_local_link_and_root_dir() {
-        let text = "/absolute/path";
-        let root_dir = PathBuf::from("/root");
-        let result = prepend_root_dir_if_absolute_local_link(text, Some(&root_dir));
-        assert_eq!(result, "/root/absolute/path");
-    }
-
-    #[test]
-    fn test_prepend_with_absolute_local_link_and_no_root_dir() {
-        let text = "/absolute/path";
-        let result = prepend_root_dir_if_absolute_local_link(text, None);
-        assert_eq!(result, "/absolute/path");
-    }
-
-    #[test]
-    fn test_prepend_with_relative_link_and_root_dir() {
-        let text = "relative/path";
-        let root_dir = PathBuf::from("/root");
-        let result = prepend_root_dir_if_absolute_local_link(text, Some(&root_dir));
-        assert_eq!(result, "relative/path");
-    }
-
-    #[test]
-    fn test_prepend_with_relative_link_and_no_root_dir() {
-        let text = "relative/path";
-        let result = prepend_root_dir_if_absolute_local_link(text, None);
-        assert_eq!(result, "relative/path");
     }
 }

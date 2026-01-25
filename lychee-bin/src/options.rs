@@ -13,7 +13,7 @@ use http::{
 use lychee_lib::Preprocessor;
 use lychee_lib::ratelimit::HostConfigs;
 use lychee_lib::{
-    Base, BaseInfo, BasicAuthSelector, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_RETRIES,
+    BaseInfo, BasicAuthSelector, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_WAIT_TIME_SECS, DEFAULT_TIMEOUT_SECS, DEFAULT_USER_AGENT, FileExtensions,
     FileType, Input, StatusCodeSelector, archive::Archive,
 };

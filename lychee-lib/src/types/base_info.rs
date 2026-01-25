@@ -2,16 +2,12 @@
 //! applying base URL and root dir mappings.
 
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::borrow::Cow;
-use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::Base;
 use crate::ErrorKind;
-use crate::ResolvedInputSource;
 use crate::Uri;
-use crate::types::uri::raw::RawUri;
 use crate::utils;
 use crate::utils::url::ReqwestUrlExt;
 use url::PathSegmentsMut;
@@ -318,55 +314,5 @@ impl TryFrom<String> for BaseInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::num::NonZeroUsize;
-    use std::path::PathBuf;
-
-    use crate::types::uri::raw::RawUriSpan;
-
-    fn raw_uri(text: &'static str) -> RawUri {
-        RawUri {
-            text: text.to_string(),
-            element: None,
-            attribute: None,
-            span: RawUriSpan {
-                line: NonZeroUsize::MAX,
-                column: None,
-            },
-        }
-    }
-
-    // #[test]
-    // fn test_base_with_filename() {
-    //     let root_dir = PathBuf::from("/some");
-    //     let base = Base::try_from("https://example.com/path/page2.html").unwrap();
-    //     let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
-    //     let base_info =
-    //         BaseInfo::from_source(&source, Some((&root_dir, Some(&base))), None).unwrap();
-    //
-    //     assert_eq!(
-    //         base_info
-    //             .parse_uri(&raw_uri("#fragment"))
-    //             .as_ref()
-    //             .map(|x| x.url.as_str()),
-    //         Ok("file:///some/page.html#fragment")
-    //     );
-    // }
-    //
-    // #[test]
-    // fn test_base_with_same_filename() {
-    //     let root_dir = PathBuf::from("/some/pagex.html");
-    //     let base = Base::try_from("https://example.com/path/page.html").unwrap();
-    //     let source = ResolvedInputSource::FsPath(PathBuf::from("/some/pagex.html"));
-    //     let base_info =
-    //         BaseInfo::from_source(&source, Some((&root_dir, Some(&base))), None).unwrap();
-    //
-    //     assert_eq!(
-    //         base_info
-    //             .parse_uri(&raw_uri("#fragment"))
-    //             .as_ref()
-    //             .map(|x| x.url.as_str()),
-    //         Ok("file:///some/pagex.html#fragment")
-    //     );
-    // }
+    // TODO: BaseInfo tests......
 }

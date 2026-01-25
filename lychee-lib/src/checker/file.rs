@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::checker::wikilink::resolver::WikilinkResolver;
 use crate::{
-    Base, BaseInfo, ErrorKind, Result, Status, Uri,
+    BaseInfo, ErrorKind, Result, Status, Uri,
     utils::fragment_checker::{FragmentChecker, FragmentInput},
 };
 
