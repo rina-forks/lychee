@@ -295,7 +295,7 @@ mod tests {
     async fn collect(
         inputs: HashSet<Input>,
         root_dir: Option<PathBuf>,
-        base: Option<Base>,
+        base: BaseInfo,
     ) -> LycheeResult<HashSet<Uri>> {
         let responses = Collector::new(root_dir, base)?.collect_links(inputs);
         Ok(responses.map(|r| r.unwrap().uri).collect().await)
@@ -308,7 +308,7 @@ mod tests {
     async fn collect_verbatim(
         inputs: HashSet<Input>,
         root_dir: Option<PathBuf>,
-        base: Option<Base>,
+        base: BaseInfo,
         extensions: FileExtensions,
     ) -> LycheeResult<HashSet<Uri>> {
         let responses = Collector::new(root_dir, base)?
@@ -402,10 +402,15 @@ mod tests {
             }),
         ]);
 
-        let links = collect_verbatim(inputs, None, None, FileType::default_extensions())
-            .await
-            .ok()
-            .unwrap();
+        let links = collect_verbatim(
+            inputs,
+            None,
+            BaseInfo::default(),
+            FileType::default_extensions(),
+        )
+        .await
+        .ok()
+        .unwrap();
 
         let expected_links = HashSet::from_iter([
             website!(TEST_STRING),
@@ -422,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_markdown_links() {
-        let base = Base::try_from("https://github.com/hello-rust/lychee/").unwrap();
+        let base = BaseInfo::try_from("https://github.com/hello-rust/lychee/").unwrap();
         let input = Input {
             source: InputSource::String(Cow::Borrowed(
                 "This is [a test](https://endler.dev). This is a relative link test [Relative Link Test](relative_link)",
@@ -431,7 +436,7 @@ mod tests {
         };
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, Some(base)).await.ok().unwrap();
+        let links = collect(inputs, None, base).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
             website!("https://endler.dev"),
@@ -443,7 +448,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_html_links() {
-        let base = Base::try_from("https://github.com/lycheeverse/").unwrap();
+        let base = BaseInfo::try_from("https://github.com/lycheeverse/").unwrap();
         let input = Input {
             source: InputSource::String(Cow::Borrowed(
                 r#"<html>
@@ -457,7 +462,7 @@ mod tests {
         };
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, Some(base)).await.ok().unwrap();
+        let links = collect(inputs, None, base).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
             website!("https://github.com/lycheeverse/lychee/"),
@@ -469,7 +474,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_html_srcset() {
-        let base = Base::try_from("https://example.com/").unwrap();
+        let base = BaseInfo::try_from("https://example.com/").unwrap();
         let input = Input {
             source: InputSource::String(Cow::Borrowed(
                 r#"
@@ -486,7 +491,7 @@ mod tests {
         };
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, Some(base)).await.ok().unwrap();
+        let links = collect(inputs, None, base).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
             website!("https://example.com/static/image.png"),
@@ -499,7 +504,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_markdown_internal_url() {
-        let base = Base::try_from("https://localhost.com/").unwrap();
+        let base = BaseInfo::try_from("https://localhost.com/").unwrap();
 
         let input = Input {
             source: InputSource::String(Cow::Borrowed(
@@ -512,7 +517,7 @@ mod tests {
         };
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, Some(base)).await.ok().unwrap();
+        let links = collect(inputs, None, base).await.ok().unwrap();
 
         let expected = HashSet::from_iter([
             website!("https://localhost.com/@/internal.md"),
@@ -526,7 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_html5_not_valid_xml_relative_links() {
-        let base = Base::try_from("https://example.com").unwrap();
+        let base = BaseInfo::try_from("https://example.com").unwrap();
         let input = load_fixture!("TEST_HTML5.html");
 
         let input = Input {
@@ -535,7 +540,7 @@ mod tests {
         };
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, Some(base)).await.ok().unwrap();
+        let links = collect(inputs, None, base).await.ok().unwrap();
 
         let expected_links = HashSet::from_iter([
             // the body links wouldn't be present if the file was parsed strictly as XML
@@ -566,7 +571,10 @@ mod tests {
 
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, None).await.ok().unwrap();
+        let links = collect(inputs, None, BaseInfo::default())
+            .await
+            .ok()
+            .unwrap();
 
         let expected_urls = HashSet::from_iter([
             website!("https://github.com/lycheeverse/lychee/"),
@@ -584,7 +592,10 @@ mod tests {
 
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, None).await.ok().unwrap();
+        let links = collect(inputs, None, BaseInfo::default())
+            .await
+            .ok()
+            .unwrap();
 
         let expected_links = HashSet::from_iter([mail!("user@example.com")]);
 
@@ -625,7 +636,10 @@ mod tests {
             },
         ]);
 
-        let links = collect(inputs, None, None).await.ok().unwrap();
+        let links = collect(inputs, None, BaseInfo::default())
+            .await
+            .ok()
+            .unwrap();
 
         let expected_links = HashSet::from_iter([
             website!(&format!(
@@ -643,11 +657,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_path_with_base() {
-        let base = Base::try_from("/path/to/root").unwrap();
-        assert_eq!(
-            base,
-            Base::from_path(&PathBuf::from("/path/to/root")).unwrap()
-        );
+        let base = BaseInfo::try_from("/path/to/root").unwrap();
 
         let input = Input {
             source: InputSource::String(Cow::Borrowed(
@@ -663,7 +673,7 @@ mod tests {
 
         let inputs = HashSet::from_iter([input]);
 
-        let links = collect(inputs, None, Some(base)).await.ok().unwrap();
+        let links = collect(inputs, None, base).await.ok().unwrap();
         let links_str: HashSet<_> = links.iter().map(|x| x.url.as_str()).collect();
 
         let expected_links: HashSet<_> = HashSet::from_iter([

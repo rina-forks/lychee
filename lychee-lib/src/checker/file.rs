@@ -306,6 +306,7 @@ impl FileChecker {
 mod tests {
     use super::FileChecker;
     use crate::{
+        BaseInfo,
         ErrorKind::{InvalidFilePath, InvalidFragment, InvalidIndexFile},
         Status, Uri,
     };
@@ -359,7 +360,7 @@ mod tests {
     #[tokio::test]
     async fn test_default() {
         // default behaviour accepts dir links as long as the directory exists.
-        let checker = FileChecker::new(None, vec![], None, true, false).unwrap();
+        let checker = FileChecker::new(&BaseInfo::default(), vec![], None, true, false).unwrap();
 
         assert_filecheck!(&checker, "filechecker/index_dir", Status::Ok(_));
 
@@ -413,7 +414,7 @@ mod tests {
     #[tokio::test]
     async fn test_index_files() {
         let checker = FileChecker::new(
-            None,
+            &BaseInfo::default(),
             vec![],
             Some(vec!["index.html".to_owned(), "index.md".to_owned()]),
             true,
@@ -453,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn test_both_fallback_and_index_corner() {
         let checker = FileChecker::new(
-            None,
+            &BaseInfo::default(),
             vec!["html".to_owned()],
             Some(vec!["index".to_owned()]),
             false,
@@ -484,7 +485,7 @@ mod tests {
     async fn test_empty_index_list_corner() {
         // empty index_files list will reject all directory links
         let checker_no_indexes =
-            FileChecker::new(None, vec![], Some(vec![]), false, false).unwrap();
+            FileChecker::new(&BaseInfo::default(), vec![], Some(vec![]), false, false).unwrap();
         assert_resolves!(
             &checker_no_indexes,
             "filechecker/index_dir",
@@ -509,7 +510,7 @@ mod tests {
             "/".to_owned(),
         ];
         let checker_dir_indexes =
-            FileChecker::new(None, vec![], Some(dir_names), false, false).unwrap();
+            FileChecker::new(&BaseInfo::default(), vec![], Some(dir_names), false, false).unwrap();
         assert_resolves!(
             &checker_dir_indexes,
             "filechecker/index_dir",
@@ -526,7 +527,7 @@ mod tests {
     async fn test_index_file_traversal_corner() {
         // index file names can contain path fragments and they will be traversed.
         let checker_dotdot = FileChecker::new(
-            None,
+            &BaseInfo::default(),
             vec![],
             Some(vec!["../index_dir/index.html".to_owned()]),
             true,
@@ -545,8 +546,14 @@ mod tests {
             .to_str()
             .expect("expected utf-8 fixtures path")
             .to_owned();
-        let checker_absolute =
-            FileChecker::new(None, vec![], Some(vec![absolute_html]), true, false).unwrap();
+        let checker_absolute = FileChecker::new(
+            &BaseInfo::default(),
+            vec![],
+            Some(vec![absolute_html]),
+            true,
+            false,
+        )
+        .unwrap();
         assert_resolves!(
             &checker_absolute,
             "filechecker/empty_dir#fragment",
@@ -556,7 +563,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_fallback_extensions_on_directories() {
-        let checker = FileChecker::new(None, vec!["html".to_owned()], None, true, false).unwrap();
+        let checker = FileChecker::new(
+            &BaseInfo::default(),
+            vec!["html".to_owned()],
+            None,
+            true,
+            false,
+        )
+        .unwrap();
 
         // fallback extensions should be applied when directory links are resolved
         // to directories (i.e., the default index_files behavior or if `.`

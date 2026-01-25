@@ -198,7 +198,7 @@ mod tests {
         uris: Vec<RawUri>,
         source: &ResolvedInputSource,
         root_dir: Option<&PathBuf>,
-        base: BaseInfo,
+        base: &BaseInfo,
         extractor: Option<&BasicAuthExtractor>,
     ) -> Vec<Request> {
         create(uris, source, root_dir, base, extractor)
@@ -234,11 +234,11 @@ mod tests {
 
     #[test]
     fn test_relative_url_resolution() {
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("relative.html")];
-        let requests = create_ok_only(uris, &source, None, Some(&base), None);
+        let requests = create_ok_only(uris, &source, None, &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -250,11 +250,11 @@ mod tests {
 
     #[test]
     fn test_absolute_url_resolution() {
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("https://another.com/page")];
-        let requests = create_ok_only(uris, &source, None, Some(&base), None);
+        let requests = create_ok_only(uris, &source, None, &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -266,11 +266,11 @@ mod tests {
 
     #[test]
     fn test_root_relative_url_resolution() {
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("/root-relative")];
-        let requests = create_ok_only(uris, &source, None, Some(&base), None);
+        let requests = create_ok_only(uris, &source, None, &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -282,11 +282,11 @@ mod tests {
 
     #[test]
     fn test_parent_directory_url_resolution() {
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("../parent")];
-        let requests = create_ok_only(uris, &source, None, Some(&base), None);
+        let requests = create_ok_only(uris, &source, None, &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -298,11 +298,11 @@ mod tests {
 
     #[test]
     fn test_fragment_url_resolution() {
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("#fragment")];
-        let requests = create_ok_only(uris, &source, None, Some(&base), None);
+        let requests = create_ok_only(uris, &source, None, &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -318,7 +318,7 @@ mod tests {
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("relative.html")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), None, None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &BaseInfo::default(), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -334,7 +334,7 @@ mod tests {
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("https://another.com/page")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), None, None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &BaseInfo::default(), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -350,7 +350,7 @@ mod tests {
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("/root-relative")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), None, None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &BaseInfo::default(), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -366,7 +366,7 @@ mod tests {
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("../parent")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), None, None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &BaseInfo::default(), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -382,7 +382,7 @@ mod tests {
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("#fragment")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), None, None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &BaseInfo::no_info(), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -395,11 +395,11 @@ mod tests {
     #[test]
     fn test_relative_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("relative.html")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), Some(&base), None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -412,11 +412,11 @@ mod tests {
     #[test]
     fn test_absolute_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("https://another.com/page")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), Some(&base), None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -429,11 +429,11 @@ mod tests {
     #[test]
     fn test_root_relative_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("/root-relative")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), Some(&base), None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -446,11 +446,11 @@ mod tests {
     #[test]
     fn test_parent_directory_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("../parent")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), Some(&base), None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -463,11 +463,11 @@ mod tests {
     #[test]
     fn test_fragment_url_resolution_from_root_dir_and_base_url() {
         let root_dir = PathBuf::from("/tmp/lychee");
-        let base = Base::try_from("https://example.com/path/page.html").unwrap();
+        let base = BaseInfo::try_from("https://example.com/path/page.html").unwrap();
         let source = ResolvedInputSource::FsPath(PathBuf::from("/some/page.html"));
 
         let uris = vec![raw_uri("#fragment")];
-        let requests = create_ok_only(uris, &source, Some(&root_dir), Some(&base), None);
+        let requests = create_ok_only(uris, &source, Some(&root_dir), &base, None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -482,7 +482,7 @@ mod tests {
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let uris = vec![raw_uri("https://example.com/page")];
-        let requests = create_ok_only(uris, &source, None, None, None);
+        let requests = create_ok_only(uris, &source, None, &BaseInfo::default(), None);
 
         assert_eq!(requests.len(), 1);
         assert!(
@@ -494,17 +494,11 @@ mod tests {
 
     #[test]
     fn test_create_request_from_relative_file_path() {
-        let base = Base::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
+        let base = BaseInfo::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
         let input_source = ResolvedInputSource::FsPath(PathBuf::from("page.html"));
 
-        let actual = create_request(
-            &raw_uri("file.html"),
-            &input_source,
-            None,
-            Some(&base),
-            None,
-        )
-        .unwrap();
+        let actual =
+            create_request(&raw_uri("file.html"), &input_source, None, &base, None).unwrap();
 
         assert_eq!(
             actual,
@@ -528,7 +522,7 @@ mod tests {
                 &raw_uri("file.html"),
                 &ResolvedInputSource::Stdin,
                 None,
-                None,
+                &BaseInfo::default(),
                 None,
             )
             .is_err()
@@ -540,7 +534,7 @@ mod tests {
                 &raw_uri("/file.html"),
                 &ResolvedInputSource::FsPath(PathBuf::from("page.html")),
                 None,
-                None,
+                &BaseInfo::no_info(),
                 None,
             )
             .is_err()
@@ -549,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_create_request_from_absolute_file_path() {
-        let base = Base::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
+        let base = BaseInfo::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
         let input_source = ResolvedInputSource::FsPath(PathBuf::from("/tmp/lychee/page.html"));
 
         // Use an absolute path that's outside the base directory
@@ -557,7 +551,7 @@ mod tests {
             &raw_uri("/usr/local/share/doc/example.html"),
             &input_source,
             None,
-            Some(&base),
+            &base,
             None,
         )
         .unwrap();
@@ -579,22 +573,22 @@ mod tests {
 
     #[test]
     fn test_parse_relative_path_into_uri() {
-        let base = Base::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
+        let base = BaseInfo::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let raw_uri = raw_uri("relative.html");
-        let uri = try_parse_into_uri(&raw_uri, &source, None, Some(&base)).unwrap();
+        let uri = try_parse_into_uri(&raw_uri, &source, None, &base).unwrap();
 
         assert_eq!(uri.url.as_str(), "file:///tmp/lychee/relative.html");
     }
 
     #[test]
     fn test_parse_absolute_path_into_uri() {
-        let base = Base::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
+        let base = BaseInfo::from_path(&PathBuf::from("/tmp/lychee")).unwrap();
         let source = ResolvedInputSource::String(Cow::Borrowed(""));
 
         let raw_uri = raw_uri("absolute.html");
-        let uri = try_parse_into_uri(&raw_uri, &source, None, Some(&base)).unwrap();
+        let uri = try_parse_into_uri(&raw_uri, &source, None, &base).unwrap();
 
         assert_eq!(uri.url.as_str(), "file:///tmp/lychee/absolute.html");
     }

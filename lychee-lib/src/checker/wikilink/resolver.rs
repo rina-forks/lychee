@@ -52,13 +52,13 @@ impl WikilinkResolver {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Base, ErrorKind, Uri, checker::wikilink::resolver::WikilinkResolver};
+    use crate::{BaseInfo, ErrorKind, Uri, checker::wikilink::resolver::WikilinkResolver};
     use test_utils::{fixture_uri, fixtures_path};
 
     #[test]
     fn test_wikilink_resolves_to_filename() {
         let resolver = WikilinkResolver::new(
-            Some(&Base::from_path(&fixtures_path!().join("wiki")).unwrap()),
+            &BaseInfo::from_path(&fixtures_path!().join("wiki")).unwrap(),
             vec!["md".to_string()],
         )
         .unwrap();
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn test_wikilink_not_found() {
         let resolver = WikilinkResolver::new(
-            Some(&Base::from_path(&fixtures_path!().join("wiki")).unwrap()),
+            &BaseInfo::from_path(&fixtures_path!().join("wiki")).unwrap(),
             vec!["md".to_string()],
         )
         .unwrap();
