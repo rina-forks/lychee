@@ -25,12 +25,7 @@ pub(crate) trait ReqwestUrlExt {
 
     /// `url.strictly_relative_to(base) == path` such that
     /// `base.join(path) == url`.
-    fn strictly_relative_to(
-        &self,
-        base: &Url,
-        traverse_up: bool,
-        match_double_slashes: bool,
-    ) -> Option<String>;
+    fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String>;
 }
 
 impl ReqwestUrlExt for Url {
@@ -52,19 +47,14 @@ impl ReqwestUrlExt for Url {
 
         match fake_base
             .as_ref()
-            .and_then(|b| url.strictly_relative_to(b, false, true))
+            .and_then(|b| url.strictly_relative_to(b, false))
         {
             Some(relative_to_base) => base.join(&relative_to_base),
             None => Ok(url.into_owned()),
         }
     }
 
-    fn strictly_relative_to(
-        &self,
-        base: &Url,
-        traverse_up: bool,
-        match_double_slashes: bool,
-    ) -> Option<String> {
+    fn strictly_relative_to(&self, base: &Url, traverse_up: bool) -> Option<String> {
         if self.cannot_be_a_base()
             || base.cannot_be_a_base()
             || self.scheme() != base.scheme()
@@ -93,22 +83,18 @@ impl ReqwestUrlExt for Url {
 
         let mut base_segments = base.path_segments().expect("!cannot_be_a_base");
         base_segments.next_back();
-        let mut base_segments = base_segments
-            .filter(|x| if match_double_slashes { true } else { *x != "" })
-            .peekable();
+        let mut base_segments = base_segments.peekable();
 
         let mut self_segments = self.path_segments().expect("!cannot_be_a_base");
         self_segments.next_back();
-        let mut self_segments = self_segments
-            .filter(|x| if match_double_slashes { true } else { *x != "" })
-            .peekable();
+        let mut self_segments = self_segments.peekable();
 
         while let Some(base_part) = base_segments.peek()
             && let Some(self_part) = self_segments.peek()
             && base_part == self_part
         {
-            let _ = base_segments.next();
-            let _ = self_segments.next();
+            base_segments.next();
+            self_segments.next();
         }
 
         if base_segments.peek().is_some() && !traverse_up {
@@ -117,14 +103,7 @@ impl ReqwestUrlExt for Url {
 
         let mut remaining = (base_segments.map(|_| ".."))
             .chain(self_segments)
-            .map(|x| if x == "" { "./" } else { x })
             .collect::<Vec<&str>>();
-
-        // let self_has_trailing_slashes = self
-        //     .path_segments()
-        //     .expect("!cannot_be_a_base")
-        //     .next_back()
-        //     .is_some_and(|x| x == "");
 
         let needs_filename = !remaining.is_empty() || self_filename != base_filename;
         let dot_can_be_omitted = !remaining.is_empty();
@@ -139,10 +118,13 @@ impl ReqwestUrlExt for Url {
             })
         }
 
-        // NOTE: not minimal. for instance, lots of `.` are inserted where they
-        // could be omitted.
-
-        // println!("remaining: {remaining:?}");
+        // using "./" is equivalent and makes sure the relative link
+        // is not interpreted as a root-relative or scheme-relative link.
+        if let Some(first) = remaining.get_mut(0)
+            && *first == ""
+        {
+            *first = "./";
+        }
 
         let mut relative = remaining.join("/");
 
@@ -287,7 +269,7 @@ mod test {
                 let base = Url::parse(base).unwrap();
                 let url = Url::parse(url).unwrap();
 
-                let result = url.strictly_relative_to(&base, true, true);
+                let result = url.strictly_relative_to(&base, true);
 
                 println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
                 println!(
@@ -323,7 +305,7 @@ mod test {
                 let base = Url::parse(base).unwrap();
                 let url = Url::parse(url).unwrap();
 
-                let result = url.strictly_relative_to(&base, true, true);
+                let result = url.strictly_relative_to(&base, true);
 
                 println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
                 println!(
