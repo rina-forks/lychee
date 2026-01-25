@@ -82,10 +82,12 @@ impl Collector {
                 let root_dir = root_dir
                     .strip_prefix("/")
                     .map(Path::to_path_buf)
-                    .unwrap_or(root_dir);
+                    .unwrap_or(root_dir)
+                    .join("");
+
                 match url.to_file_path() {
                     Ok(base_path) => (
-                        Some(base_path.join(root_dir).join("")),
+                        Some(base_path.join(root_dir)),
                         BaseInfo::full_info(url, path),
                     ),
                     Err(()) => (Some(root_dir), BaseInfo::full_info(url, path)),
@@ -97,9 +99,9 @@ impl Collector {
                         .canonicalize()
                         .map_err(|e| ErrorKind::InvalidRootDir(root_dir, e))?,
                 ),
-                base.clone(),
+                base,
             ),
-            (None, base) => (None, base.clone()),
+            (None, base) => (None, base),
         };
         Ok(Collector {
             basic_auth_extractor: None,

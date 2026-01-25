@@ -468,11 +468,11 @@ mod cli {
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("file:///base/root/index.html"))
             .stdout(contains("file:///base/root"))
+            .stdout(contains("file:///base/root/about"))
+            .stdout(contains("file:///base/resolve_paths/index.html"))
             .stdout(contains("file:///base/root/another%20page#y"))
-            .stdout(contains("file:///base/root/same%20folder.html#x"))
-            .stdout(contains("file:///base/root/about"));
+            .stdout(contains("file:///base/resolve_paths/same%20folder.html#x"));
     }
 
     #[test]
