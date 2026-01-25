@@ -123,14 +123,14 @@ impl ReqwestUrlExt for Url {
         //     .next_back()
         //     .is_some_and(|x| x == "");
 
-        if self_filename != base_filename {
-            remaining.push(self_filename.as_ref());
-        } else if !remaining.is_empty() {
-            if self_filename == "." {
-                remaining.push("")
+        if !remaining.is_empty() {
+            if self_filename == "." || self_filename.starts_with(".?") {
+                remaining.push(self_filename.trim_start_matches('.'))
             } else {
                 remaining.push(self_filename.as_ref());
             }
+        } else if self_filename != base_filename {
+            remaining.push(self_filename.as_ref());
         }
 
         // NOTE: not minimal. for instance, lots of `.` are inserted where they
