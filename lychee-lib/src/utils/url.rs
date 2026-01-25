@@ -54,11 +54,11 @@ impl ReqwestUrlExt for Url {
 ///
 /// On Windows, we take care to make sure absolute paths---which could also be
 /// parsed as URLs---are returned as filesystem paths.
-pub(crate) fn parse_url_or_path(input: &str) -> Result<Url, String> {
+pub(crate) fn parse_url_or_path(input: &str) -> Result<Url, &str> {
     match Url::parse(input) {
-        Ok(url) if cfg!(windows) && url.scheme().len() == 1 => Err(input.to_string()),
+        Ok(url) if cfg!(windows) && url.scheme().len() == 1 => Err(input),
         Ok(url) => Ok(url),
-        _ => Err(input.to_string()),
+        _ => Err(input),
     }
 }
 
@@ -71,5 +71,66 @@ pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>>
 
 #[cfg(test)]
 mod test {
-    // TODO: tests for join_rooted
+    use super::*;
+
+    #[test]
+    fn test_join_rooted() {
+        let test_urls_and_expected = [
+            // normal HTTP traversal and parsing absolute links
+            ("https://a.com/b", vec!["x/", "d"], "https://a.com/x/d"),
+            ("https://a.com/b/", vec!["x/", "d"], "https://a.com/b/x/d"),
+            (
+                "https://a.com/b/",
+                vec!["https://new.com", "d"],
+                "https://new.com/d",
+            ),
+            // parsing absolute file://
+            ("https://a.com/b/", vec!["file:///a", "d"], "file:///d"),
+            ("https://a.com/b/", vec!["file:///a/", "d"], "file:///a/d"),
+            (
+                "https://a.com/b/",
+                vec!["file:///a/b/", "../.."],
+                "file:///",
+            ),
+            // file traversal - should stay within root
+            ("file:///a/b/", vec!["a/"], "file:///a/b/a/"),
+            ("file:///a/b/", vec!["a/", "../.."], "file:///a/b/"),
+            ("file:///a/b/", vec!["a/", "/"], "file:///a/b/"),
+            ("file:///a/b/", vec!["/.."], "file:///a/b/"),
+            ("file:///a/b/", vec![""], "file:///a/b/"),
+            ("file:///a/b/", vec!["."], "file:///a/b/"),
+            // HTTP relative links
+            ("https://a.com/x", vec![""], "https://a.com/x"),
+            ("https://a.com/x", vec![".", "?a"], "https://a.com/?a"),
+            ("https://a.com/x", vec!["/"], "https://a.com/"),
+            ("https://a.com/x?q#anchor", vec![""], "https://a.com/x?q"),
+            ("https://a.com/x#anchor", vec!["?x"], "https://a.com/x?x"),
+            // scheme relative link - can traverse outside of root
+            ("file:///root/", vec!["///new-root"], "file:///new-root"),
+            ("file:///root/", vec!["//a.com/boop"], "file://a.com/boop"),
+            ("https://root/", vec!["//a.com/boop"], "https://a.com/boop"),
+            // file URLs without trailing / are not a high priority and are
+            // kinda weird - the / amd . cases should drop the filename
+            ("file:///a/b/c", vec!["/../../a"], "file:///a/b/a"),
+            ("file:///a/b/c", vec!["/"], "file:///a/b/c"),
+            ("file:///a/b/c", vec![".?qq"], "file:///a/b/c?qq"),
+            ("file:///a/b/c", vec!["./"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["d", "/../../a"], "file:///a/b/a"),
+            ("file:///a/b/c", vec!["d", "/"], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["d", "."], "file:///a/b/c"),
+            ("file:///a/b/c", vec!["d", "./"], "file:///a/b/c"),
+        ];
+
+        for (base, subpaths, expected) in test_urls_and_expected {
+            println!("base={base}, subpaths={subpaths:?}, expected={expected}");
+            assert_eq!(
+                Url::parse(base)
+                    .unwrap()
+                    .join_rooted(&subpaths[..])
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+        }
+    }
 }
