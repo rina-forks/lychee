@@ -446,12 +446,12 @@ mod cli {
             .arg("/resolve_paths")
             .arg("--base-url")
             .arg(&dir)
-            .arg(dir.join("resolve_paths").join("index.html"))
+            .arg(dir.join("resolve_paths").join("index2.html"))
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("3 Total"))
-            .stdout(contains("3 OK"));
+            .stdout(contains("5 Total"))
+            .stdout(contains("5 OK"));
     }
 
     #[test]
@@ -468,9 +468,10 @@ mod cli {
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("file:///base/same%20page.html#x"))
+            .stdout(contains("file:///base/root/index.html"))
             .stdout(contains("file:///base/root"))
             .stdout(contains("file:///base/root/another%20page#y"))
+            .stdout(contains("file:///base/root/same%20folder.html#x"))
             .stdout(contains("file:///base/root/about"));
     }
 
