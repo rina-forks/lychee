@@ -117,18 +117,18 @@ impl ReqwestUrlExt for Url {
             .map(|x| if x == "" { "./" } else { x })
             .collect::<Vec<&str>>();
 
-        let number_of_trailing_slashes_in_self = self
+        let self_has_trailing_slashes = self
             .path_segments()
             .expect("!cannot_be_a_base")
-            .rev()
-            .take_while(|x| *x == "")
-            .count();
+            .next_back()
+            .is_some();
 
-        remaining.extend(std::iter::repeat_n(".", number_of_trailing_slashes_in_self));
-
-        // maybe it would be easier to unconditionally append filename...
-        if self_filename != base_filename || number_of_trailing_slashes_in_self > 0 {
+        if self_filename != base_filename {
             remaining.push(self_filename.as_ref());
+        } else if self_has_trailing_slashes {
+            // if self has trailing slashes, we need to make sure a slash appears at
+            // the end to maintain this in the output.
+            remaining.push("");
         }
 
         // NOTE: not minimal. for instance, lots of `.` are inserted where they
@@ -304,6 +304,7 @@ mod test {
             "https://a.com///a",
             "https://a.com/a//",
             "https://a.com//a//b//",
+            "https://a.com//a//b//?q",
         ];
 
         for base in test_urls {
