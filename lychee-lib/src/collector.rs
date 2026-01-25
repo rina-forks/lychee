@@ -93,7 +93,8 @@ impl Collector {
             }
             (Some(root_dir), base) => (
                 Some(
-                    std::path::absolute(&root_dir)
+                    root_dir
+                        .canonicalize()
                         .map_err(|e| ErrorKind::InvalidRootDir(root_dir, e))?,
                 ),
                 base.clone(),
