@@ -117,18 +117,20 @@ impl ReqwestUrlExt for Url {
             .map(|x| if x == "" { "./" } else { x })
             .collect::<Vec<&str>>();
 
-        let self_has_trailing_slashes = self
-            .path_segments()
-            .expect("!cannot_be_a_base")
-            .next_back()
-            .is_some();
+        // let self_has_trailing_slashes = self
+        //     .path_segments()
+        //     .expect("!cannot_be_a_base")
+        //     .next_back()
+        //     .is_some_and(|x| x == "");
 
         if self_filename != base_filename {
             remaining.push(self_filename.as_ref());
-        } else if self_has_trailing_slashes {
-            // if self has trailing slashes, we need to make sure a slash appears at
-            // the end to maintain this in the output.
-            remaining.push("");
+        } else if !remaining.is_empty() {
+            if self_filename == "." {
+                remaining.push("")
+            } else {
+                remaining.push(self_filename.as_ref());
+            }
         }
 
         // NOTE: not minimal. for instance, lots of `.` are inserted where they
@@ -269,6 +271,7 @@ mod test {
             "https://a.com/a/b/c/?query",
             "https://a.com/a/b/c/?QUERY2",
             "https://a.com/a///b/c",
+            "https://a.com/x//b/c",
         ];
 
         for base in test_urls {
