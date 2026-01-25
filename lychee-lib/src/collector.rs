@@ -70,17 +70,32 @@ impl Collector {
     ///
     /// # Errors
     ///
-    /// Returns an `Err` if the `root_dir` is not an absolute path
+    /// Returns an `Err` if the `root_dir` is not a valid path
     /// or if the reqwest `Client` fails to build
     pub fn new(root_dir: Option<PathBuf>, base: BaseInfo) -> LycheeResult<Self> {
-        let root_dir = match root_dir {
-            Some(root_dir) if base.supports_locally_relative() => Some(root_dir),
-            Some(root_dir) => Some(
-                root_dir
-                    .canonicalize()
-                    .map_err(|e| ErrorKind::InvalidRootDir(root_dir, e))?,
+        // HACK: if root-dir and base-url are given together and the base is a full file path,
+        // then join the root dir onto the base to match old behaviour.........
+        // this will have big encoding problems
+        let (root_dir, base) = match (root_dir, base) {
+            (Some(root_dir), BaseInfo::Full(url, path))
+                if url.scheme() == "file" && path.is_empty() =>
+            {
+                let root_dir_path = root_dir.join(""); // for trailing slash
+                let root_dir_str = root_dir_path.to_string_lossy();
+                let url = url
+                    .join(root_dir_str.trim_start_matches('/'))
+                    .map_err(|e| ErrorKind::ParseUrl(e, root_dir_str.to_string()))?;
+                (None, BaseInfo::full_info(url, String::new()))
+            }
+            (Some(root_dir), base) => (
+                Some(
+                    root_dir
+                        .canonicalize()
+                        .map_err(|e| ErrorKind::InvalidRootDir(root_dir, e))?,
+                ),
+                base.clone(),
             ),
-            None => None,
+            (None, base) => (None, base.clone()),
         };
         Ok(Collector {
             basic_auth_extractor: None,
@@ -253,7 +268,7 @@ impl Collector {
                     let requests = request::create(
                         uris,
                         &content.source,
-                        root_dir.as_ref(),
+                        root_dir.as_deref(),
                         &global_base,
                         basic_auth_extractor.as_ref(),
                     );
@@ -668,7 +683,7 @@ mod tests {
         let expected_links: HashSet<_> = HashSet::from_iter([
             ("file:///path/to/root/index.html"),
             ("file:///path/to/root/about.html"),
-            ("file:///path/to/up.html"),
+            ("file:///path/to/root/up.html"),
             ("file:///path/to/root/another.html"),
         ]);
 

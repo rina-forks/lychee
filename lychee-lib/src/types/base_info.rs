@@ -112,8 +112,11 @@ impl BaseInfo {
         Ok(Self::from_source_url(url))
     }
 
-    /// Constructs a [`BaseInfo`] from the given filesystem path, requiring that the given path be
-    /// absolute.
+    /// Constructs a [`BaseInfo`] from the given filesystem path, requiring that
+    /// the given path be absolute.
+    ///
+    /// This constructs a [`BaseInfo::Full`] where root-relative links will go to
+    /// the given path.
     ///
     /// # Errors
     ///
@@ -127,7 +130,7 @@ impl BaseInfo {
             ));
         };
 
-        Self::from_base_url(&url)
+        Self::from_base_url(&url).map(|x| x.use_fs_path_as_origin().into_owned())
     }
 
     /// If this is a [`BaseInfo::NoRoot`], promote it to a [`BaseInfo::Full`]
@@ -301,8 +304,7 @@ impl TryFrom<&str> for BaseInfo {
         }
         match utils::url::parse_url_or_path(value) {
             Ok(url) => BaseInfo::from_base_url(&url),
-            Err(path) => BaseInfo::from_path(&PathBuf::from(path))
-                .map(|x| x.use_fs_path_as_origin().into_owned()),
+            Err(path) => BaseInfo::from_path(&PathBuf::from(path)),
         }
     }
 }

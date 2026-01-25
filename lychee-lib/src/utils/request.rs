@@ -22,7 +22,7 @@ pub(crate) fn extract_credentials(
 fn create_request(
     raw_uri: &RawUri,
     source: &ResolvedInputSource,
-    root_dir: Option<&PathBuf>,
+    root_dir: Option<&Path>,
     base: &BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> LycheeResult<Request> {
@@ -49,9 +49,10 @@ fn create_request(
 fn try_parse_into_uri(
     raw_uri: &RawUri,
     source: &ResolvedInputSource,
-    root_dir: Option<&PathBuf>,
+    root_dir: Option<&Path>,
     base: &BaseInfo,
 ) -> LycheeResult<Uri> {
+    // TODO: this conversion should be hoisted up the call stack
     let root_dir = root_dir.and_then(|x| Url::from_directory_path(x).ok());
     Ok(base
         .parse_url_text(&raw_uri.text, root_dir.as_ref())?
@@ -105,7 +106,7 @@ fn create_uri_from_file_path(
 pub(crate) fn create(
     uris: Vec<RawUri>,
     source: &ResolvedInputSource,
-    root_dir: Option<&PathBuf>,
+    root_dir: Option<&Path>,
     fallback_base: &BaseInfo,
     extractor: Option<&BasicAuthExtractor>,
 ) -> Vec<Result<Request, RequestError>> {
@@ -210,7 +211,7 @@ mod tests {
     fn create_ok_only(
         uris: Vec<RawUri>,
         source: &ResolvedInputSource,
-        root_dir: Option<&PathBuf>,
+        root_dir: Option<&Path>,
         base: &BaseInfo,
         extractor: Option<&BasicAuthExtractor>,
     ) -> Vec<Request> {
@@ -452,7 +453,7 @@ mod tests {
         assert!(
             requests
                 .iter()
-                .any(|r| r.uri.url.as_str() == "https://example.com/tmp/lychee/root-relative")
+                .any(|r| r.uri.url.as_str() == "https://example.com/root-relative")
         );
     }
 

@@ -468,7 +468,7 @@ mod cli {
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("file:///base/same%20page.html#x"))
+            .stdout(contains("file:///base/root/same%20page.html#x"))
             .stdout(contains("file:///base/root"))
             .stdout(contains("file:///base/root/another%20page#y"))
             .stdout(contains("file:///base/root/about"));
