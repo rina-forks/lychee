@@ -86,7 +86,7 @@ pub(crate) fn create(
     let mut errors = Vec::<RequestError>::new();
 
     for raw_uri in uris {
-        let result = create_request(&raw_uri, source, root_dir, &base, extractor);
+        let result = create_request(&raw_uri, source, root_dir, base, extractor);
         match result {
             Ok(request) => {
                 requests.insert(request);

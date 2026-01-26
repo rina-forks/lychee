@@ -160,12 +160,17 @@ pub enum ResolvedInputSource {
 }
 
 impl ResolvedInputSource {
-    /// Converts an [`InputSource::RemoteUrl`] or [`InputSource::FsPath`]
-    /// to a [`Url`] pointing to the source.
+    /// Converts an [`ResolvedInputSource::RemoteUrl`] or
+    /// [`ResolvedInputSource::FsPath`] to a [`Url`] pointing to the source.
     ///
     /// The outer result indicates whether the operation succeeded.
     /// For `InputSource` variants which are not `RemoteUrl` or `FsPath`,
     /// the operation will "succeed" with `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if building a URL from a [`ResolvedInputSource::FsPath`]
+    /// fails.
     pub fn to_url(&self) -> Result<Option<Url>, ErrorKind> {
         match self {
             Self::RemoteUrl(url) => Ok(Some(url.deref().clone())),

@@ -58,12 +58,14 @@ pub enum BaseInfo {
 
 impl BaseInfo {
     /// Constructs [`BaseInfo::None`].
-    pub fn no_info() -> Self {
+    #[must_use]
+    pub const fn no_info() -> Self {
         Self::None
     }
 
     /// Constructs [`BaseInfo::Full`] with the given fields.
-    pub fn full_info(origin: Url, path: String) -> Self {
+    #[must_use]
+    pub const fn full_info(origin: Url, path: String) -> Self {
         Self::Full(origin, path)
     }
 
@@ -77,6 +79,7 @@ impl BaseInfo {
     /// Compared to [`BaseInfo::from_base_url`], this function is more lenient in
     /// what it accepts because this function should return *a* result for all
     /// input source URLs.
+    #[must_use]
     pub fn from_source_url(url: &Url) -> Self {
         if url.scheme() == "file" {
             Self::NoRoot(url.clone())
@@ -90,7 +93,7 @@ impl BaseInfo {
 
     fn split_url_origin_and_path(url: &Url) -> Option<(Url, String)> {
         let origin = url.join("/").ok()?;
-        let subpath = origin.make_relative(&url)?;
+        let subpath = origin.make_relative(url)?;
         Some((origin, subpath))
     }
 
@@ -141,12 +144,17 @@ impl BaseInfo {
     /// to look for files.
     ///
     /// Makes no change to other [`BaseInfo`] variants.
+    ///
+    /// # Panics
+    ///
+    /// If unable to split a [`BaseInfo::NoRoot`] into origin and path.
+    #[must_use]
     pub fn use_fs_root_as_origin(&self) -> Cow<'_, Self> {
         let Self::NoRoot(url) = self else {
             return Cow::Borrowed(self);
         };
 
-        let (fs_root, subpath) = Self::split_url_origin_and_path(&url)
+        let (fs_root, subpath) = Self::split_url_origin_and_path(url)
             .expect("splitting up a NoRoot file:// URL should work");
 
         Cow::Owned(Self::full_info(fs_root, subpath))
@@ -160,6 +168,7 @@ impl BaseInfo {
     /// user-provided root directory.
     ///
     /// Makes no change to other [`BaseInfo`] variants.
+    #[must_use]
     pub fn use_fs_path_as_origin(&self) -> Cow<'_, Self> {
         let Self::NoRoot(url) = self else {
             return Cow::Borrowed(self);
@@ -170,6 +179,7 @@ impl BaseInfo {
 
     /// Returns the URL for the current [`BaseInfo`], joining the origin and path
     /// if needed.
+    #[must_use]
     pub fn url(&self) -> Option<Url> {
         match self {
             Self::None => None,
@@ -180,6 +190,7 @@ impl BaseInfo {
 
     /// Returns the filesystem path for the current [`BaseInfo`] if the underlying
     /// URL is a `file:` URL.
+    #[must_use]
     pub fn to_file_path(&self) -> Option<PathBuf> {
         self.url()
             .filter(|url| url.scheme() == "file")
@@ -187,28 +198,31 @@ impl BaseInfo {
     }
 
     /// Returns the scheme of the underlying URL.
+    #[must_use]
     pub fn scheme(&self) -> Option<&str> {
         match self {
             Self::None => None,
-            Self::NoRoot(url) => Some(url.scheme()),
-            Self::Full(url, _) => Some(url.scheme()),
+            Self::NoRoot(url) | Self::Full(url, _) => Some(url.scheme()),
         }
     }
 
     /// Returns whether this value is [`BaseInfo::None`].
-    pub fn is_none(&self) -> bool {
+    #[must_use]
+    pub const fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 
     /// Returns whether this [`BaseInfo`] variant supports resolving root-relative links.
     ///
     /// If true, implies [`BaseInfo::supports_locally_relative`].
-    pub fn supports_root_relative(&self) -> bool {
+    #[must_use]
+    pub const fn supports_root_relative(&self) -> bool {
         matches!(self, Self::Full(_, _))
     }
 
     /// Returns whether this [`BaseInfo`] variant supports resolving locally-relative links.
-    pub fn supports_locally_relative(&self) -> bool {
+    #[must_use]
+    pub const fn supports_locally_relative(&self) -> bool {
         !self.is_none()
     }
 
@@ -218,7 +232,9 @@ impl BaseInfo {
     /// [`BaseInfo::Full`] is preferred over [`BaseInfo::NoRoot`]
     /// which is preferred over [`BaseInfo::None`]. If both `self`
     /// and `fallback` are the same variant, then `self` will be preferred.
-    pub fn or_fallback<'a>(&'a self, fallback: &'a Self) -> &'a Self {
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn or_fallback<'a>(&'a self, fallback: &'a Self) -> &'a Self {
         match (self, fallback) {
             (x @ Self::Full(_, _), _) => x,
             (_, x @ Self::Full(_, _)) => x,
@@ -247,7 +263,7 @@ impl BaseInfo {
     /// relative link and this [`BaseInfo`] variant cannot resolve
     /// the relative link.
     pub fn parse_url_text(&self, text: &str) -> Result<Url, ErrorKind> {
-        let mut url = match Uri::try_from(text.as_ref()) {
+        let mut url = match Uri::try_from(text) {
             Ok(Uri { url }) => Ok(url),
             Err(e @ ErrorKind::ParseUrl(_, _)) => match self {
                 Self::NoRoot(_) if Self::is_root_relative(text) => {
@@ -279,9 +295,9 @@ impl BaseInfo {
     /// resolving relative links if supported by the current [`BaseInfo`]
     /// and applying the given root-dir if necessary.
     ///
-    /// The root-dir is applied if the current BaseInfo is a `file:` URL
+    /// The root-dir is applied if the current `BaseInfo` is a `file:` URL
     /// and if the given text is a root-relative link. In these cases, the
-    /// given `root_dir` will take effect instead of the original BaseInfo.
+    /// given `root_dir` will take effect instead of the original `BaseInfo`.
     ///
     /// # Errors
     ///
