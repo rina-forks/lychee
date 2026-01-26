@@ -40,13 +40,11 @@ impl ReqwestUrlExt for Url {
             "file" => {
                 let filename = base.path_segments().and_then(|mut x| x.next_back());
 
-                if let Some(filename) = filename && filename != "" {
-                    let new_subpaths = [&[filename], &subpaths[..]].concat();
-                    return base.join(".")?.join_rooted(&new_subpaths);
-                }
-
                 let mut fake_base = base.join("/")?;
 
+                if let Some(filename) = filename {
+                    fake_base = fake_base.join(filename)?;
+                }
                 fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
                 Some(fake_base)
             }
@@ -218,7 +216,6 @@ mod test {
             ("file:///root/", vec!["//a.com/boop"], "file://a.com/boop"),
             ("https://root/", vec!["//a.com/boop"], "https://a.com/boop"),
             // file URLs without trailing / are kinda weird.
-            // XXX: the cases with / and . should probably drop the file name
             ("file:///a/b/c", vec!["/../../a"], "file:///a/b/a"),
             ("file:///a/b/c", vec!["/"], "file:///a/b/"),
             ("file:///a/b/c", vec![".?qq"], "file:///a/b/?qq"),
