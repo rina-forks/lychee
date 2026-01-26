@@ -36,16 +36,33 @@ pub(crate) trait ReqwestUrlExt {
 impl ReqwestUrlExt for Url {
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError> {
         let base = self;
+
+
+        // for file:// base URLs, we need to apply *rooting* and make sure
+        // we don't go outside of the base. the idea is to make a "fake" base
+        // at the filesystem root, so excessive ".." links will get absorbed
+        // and have no effect.
+        //
+        // we need some extra bookkeeping to detect when this base was used
+        // and we need to keep the filename.....
         let fake_base = match base.scheme() {
             "file" => {
-                let filename = base.path_segments().and_then(|mut x| x.next_back());
-
                 let mut fake_base = base.join("/")?;
-
-                if let Some(filename) = filename {
-                    fake_base = fake_base.join(filename)?;
-                }
                 fake_base.set_host(Some("secret-lychee-base-url.invalid"))?;
+
+                let mut filename = base
+                    .path_segments()
+                    .and_then(|mut x| x.next_back())
+                    .unwrap_or(".")
+                    .to_string();
+
+                if let Some(query) = base.query() {
+                    filename.push('?');
+                    filename.push_str(query);
+                }
+
+                fake_base = fake_base.join(&filename)?;
+
                 Some(fake_base)
             }
             _ => None,
