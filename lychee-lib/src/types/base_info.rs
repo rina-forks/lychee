@@ -364,6 +364,25 @@ mod tests {
     }
 
     #[test]
+    fn test_base_info_with_http_base() {
+        let base = BaseInfo::try_from("https://a.com/c/u/").unwrap();
+        let root_dir = Url::parse("file:///root/").unwrap();
+
+        // shouldn't trigger the root URL
+        assert_eq!(
+            base.parse_url_text_with_root_dir("/a", Some(&root_dir)),
+            Ok(Url::parse("https://a.com/a").unwrap())
+        );
+
+        assert_eq!(
+            base.parse_url_text_with_root_dir("..", Some(&root_dir)),
+            Ok(Url::parse("https://a.com/c/").unwrap())
+        );
+
+        // not many tests here because it's covered by join_rooted tests
+    }
+
+    #[test]
     fn test_base_info_parse_with_root_dir() {
         let base = BaseInfo::try_from("/file-path").unwrap();
         let root_dir = Url::parse("file:///root/").unwrap();
@@ -397,6 +416,6 @@ mod tests {
             base.parse_url_text_with_root_dir("/../../", Some(&root_dir)),
             Ok(Url::parse("file:///root").unwrap())
         );
-        // XXX: why does the trailing / get dropped? ...make_relative bug??
+        // NOTE: trailing slash is dropped by parse_url_text
     }
 }

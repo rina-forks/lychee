@@ -119,10 +119,13 @@ mod tests {
             ("file:///a/b/", vec!["a/", "../.."], "file:///a/b/"),
             ("file:///a/b/", vec!["a/", "/"], "file:///a/b/"),
             ("file:///a/b/", vec!["/.."], "file:///a/b/"),
+            ("file:///a/b/", vec!["/../../"], "file:///a/b/"),
             ("file:///a/b/", vec![""], "file:///a/b/"),
             ("file:///a/b/", vec!["."], "file:///a/b/"),
             // HTTP relative links
             ("https://a.com/x", vec![""], "https://a.com/x"),
+            ("https://a.com/x", vec!["../../.."], "https://a.com/"),
+            ("https://a.com/x", vec!["?q", "#x"], "https://a.com/x?q#x"),
             ("https://a.com/x", vec![".", "?a"], "https://a.com/?a"),
             ("https://a.com/x", vec!["/"], "https://a.com/"),
             ("https://a.com/x?q#anchor", vec![""], "https://a.com/x?q"),
