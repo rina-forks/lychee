@@ -238,6 +238,9 @@ impl BaseInfo {
     /// Parses the given URL text into a fully-qualified URL, including
     /// resolving relative links if supported by the current [`BaseInfo`].
     ///
+    /// To resolve relative links, this uses [`Url::join`] and [`ReqwestUrlExt::join_rooted`]
+    /// for [`BaseInfo::NoRoot`] and [`BaseInfo::Full`], respectively.
+    ///
     /// # Errors
     ///
     /// Returns an error if the text is an invalid URL, or if the text is a
