@@ -23,7 +23,7 @@ impl WikilinkResolver {
             ))?,
             base => base,
         };
-        let base = match base.to_path() {
+        let base = match base.to_file_path() {
             Some(p) => p,
             None => Err(ErrorKind::WikilinkInvalidBase(
                 "Base cannot be remote".to_string(),

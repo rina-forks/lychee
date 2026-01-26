@@ -92,7 +92,7 @@ pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>>
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

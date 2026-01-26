@@ -73,8 +73,11 @@ impl BaseInfo {
     /// - A `file:` URL will yield [`BaseInfo::NoRoot`].
     /// - For other URLs, a [`BaseInfo::Full`] will be constructed from the URL's
     ///   origin and path.
+    ///
+    /// Compared to [`BaseInfo::from_base_url`], this function is more lenient in
+    /// what it accepts because this function should return *a* result for all
+    /// input source URLs.
     pub fn from_source_url(url: &Url) -> Self {
-        // TODO: should we return error if a cannot_be_a_base is given?
         if url.scheme() == "file" {
             Self::NoRoot(url.clone())
         } else {
@@ -167,7 +170,7 @@ impl BaseInfo {
 
     /// Returns the URL for the current [`BaseInfo`], joining the origin and path
     /// if needed.
-    pub fn to_url(&self) -> Option<Url> {
+    pub fn url(&self) -> Option<Url> {
         match self {
             Self::None => None,
             Self::NoRoot(url) => Some(url.clone()),
@@ -177,8 +180,8 @@ impl BaseInfo {
 
     /// Returns the filesystem path for the current [`BaseInfo`] if the underlying
     /// URL is a `file:` URL.
-    pub fn to_path(&self) -> Option<PathBuf> {
-        self.to_url()
+    pub fn to_file_path(&self) -> Option<PathBuf> {
+        self.url()
             .filter(|url| url.scheme() == "file")
             .and_then(|x| x.to_file_path().ok())
     }
@@ -333,5 +336,67 @@ impl TryFrom<String> for BaseInfo {
 
 #[cfg(test)]
 mod tests {
-    // TODO: BaseInfo tests......
+
+    use super::BaseInfo;
+    use reqwest::Url;
+
+    #[test]
+    fn test_base_info_construction() {
+        assert_eq!(
+            BaseInfo::try_from("https://a.com/b/?q#x").unwrap(),
+            BaseInfo::Full(Url::parse("https://a.com").unwrap(), "b/?q#x".to_string())
+        );
+        assert_eq!(
+            BaseInfo::try_from("file:///file-path").unwrap(),
+            BaseInfo::NoRoot(Url::parse("file:///file-path").unwrap())
+        );
+        assert_eq!(
+            BaseInfo::try_from("/file-path").unwrap(),
+            BaseInfo::Full(Url::parse("file:///file-path/").unwrap(), String::new())
+        );
+
+        let urls = ["https://a.com/b/?q#x", "file:///a.com/b/?q#x"];
+        // .url() of base-info should return the original URL
+        for url_str in urls {
+            let url = Url::parse(url_str).unwrap();
+            assert_eq!(BaseInfo::try_from(url_str).unwrap().url(), Some(url));
+        }
+    }
+
+    #[test]
+    fn test_base_info_parse_with_root_dir() {
+        let base = BaseInfo::try_from("/file-path").unwrap();
+        let root_dir = Url::parse("file:///root/").unwrap();
+
+        // first, links which shouldn't trigger the root URL
+        assert_eq!(
+            base.parse_url_text_with_root_dir("a", Some(&root_dir)),
+            Ok(Url::parse("file:///file-path/a").unwrap())
+        );
+        assert_eq!(
+            base.parse_url_text_with_root_dir("./a", Some(&root_dir)),
+            Ok(Url::parse("file:///file-path/a").unwrap())
+        );
+        assert_eq!(
+            base.parse_url_text_with_root_dir("///scheme-relative", Some(&root_dir)),
+            Ok(Url::parse("file:///scheme-relative").unwrap())
+        );
+        assert_eq!(
+            base.parse_url_text_with_root_dir("https://a.com/b?q", Some(&root_dir)),
+            Ok(Url::parse("https://a.com/b?q").unwrap())
+        );
+
+        // basic root dir use
+        assert_eq!(
+            base.parse_url_text_with_root_dir("/a", Some(&root_dir)),
+            Ok(Url::parse("file:///root/a").unwrap())
+        );
+
+        // root-dir cannot be traversed out of
+        assert_eq!(
+            base.parse_url_text_with_root_dir("/../../", Some(&root_dir)),
+            Ok(Url::parse("file:///root").unwrap())
+        );
+        // XXX: why does the trailing / get dropped? ...make_relative bug??
+    }
 }
