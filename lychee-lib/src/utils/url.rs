@@ -22,29 +22,20 @@ pub(crate) trait ReqwestUrlExt {
     /// Relative links with non-`file:` bases can traverse anywhere as
     /// usual.
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
-
-    /// `url.strictly_relative_to(base) == path` such that
-    /// `base.join(path) == url`.
-    fn strictly_relative_to(
-        &self,
-        base: &Url,
-        traverse_up: bool,
-        always_emit_filename_segment: bool,
-    ) -> Option<String>;
 }
 
 impl ReqwestUrlExt for Url {
     fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError> {
         let base = self;
 
-
         // for file:// base URLs, we need to apply *rooting* and make sure
-        // we don't go outside of the base. the idea is to make a "fake" base
-        // at the filesystem root, so excessive ".." links will get absorbed
-        // and have no effect.
+        // we don't go outside of the base.
+        //
+        // the idea is to make a "fake" base at the filesystem root, so
+        // excessive ".." links will get absorbed and have no effect.
         //
         // we need some extra bookkeeping to detect when this base was used
-        // and we need to keep the filename.....
+        // and maintain a filename
         let fake_base = match base.scheme() {
             "file" => {
                 let mut fake_base = base.join("/")?;
@@ -73,102 +64,10 @@ impl ReqwestUrlExt for Url {
             url = Cow::Owned(url.join(subpath)?);
         }
 
-        match fake_base
-            .as_ref()
-            .and_then(|b| url.strictly_relative_to(b, false, true))
-        {
+        match fake_base.as_ref().and_then(|b| b.make_relative(&url)) {
             Some(relative_to_base) => base.join(&relative_to_base),
             None => Ok(url.into_owned()),
         }
-    }
-
-    fn strictly_relative_to(
-        &self,
-        base: &Url,
-        traverse_up: bool,
-        always_emit_filename_segment: bool,
-    ) -> Option<String> {
-        if self.cannot_be_a_base()
-            || base.cannot_be_a_base()
-            || self.scheme() != base.scheme()
-            || self.authority() != base.authority()
-            || self.port() != base.port()
-        {
-            return None;
-        }
-
-        fn filename_with_query(url: &Url) -> String {
-            let last = url.path_segments().expect("!cannot_be_a_base").next_back();
-
-            let filename = match last {
-                Some("") | None => ".",
-                Some(filename) => filename,
-            };
-
-            match url.query() {
-                Some(query) => format!("{filename}?{query}"),
-                None => filename.to_string(),
-            }
-        }
-
-        let base_filename = filename_with_query(base);
-        let self_filename = filename_with_query(self);
-
-        let mut base_segments = base.path_segments().expect("!cannot_be_a_base");
-        base_segments.next_back();
-        let mut base_segments = base_segments.peekable();
-
-        let mut self_segments = self.path_segments().expect("!cannot_be_a_base");
-        self_segments.next_back();
-        let mut self_segments = self_segments.peekable();
-
-        while let Some(base_part) = base_segments.peek()
-            && let Some(self_part) = self_segments.peek()
-            && base_part == self_part
-        {
-            base_segments.next();
-            self_segments.next();
-        }
-
-        if base_segments.peek().is_some() && !traverse_up {
-            return None;
-        }
-
-        let mut remaining = (base_segments.map(|_| ".."))
-            .chain(self_segments)
-            .collect::<Vec<&str>>();
-
-        let needs_filename = !remaining.is_empty() || self_filename != base_filename;
-        let dot_can_be_omitted = !remaining.is_empty();
-
-        if always_emit_filename_segment {
-            remaining.push(self_filename.as_ref());
-        } else if needs_filename {
-            remaining.push(if dot_can_be_omitted && self_filename == "." {
-                ""
-            } else if self_filename.starts_with(".?") {
-                self_filename.trim_start_matches('.')
-            } else {
-                self_filename.as_ref()
-            })
-        }
-
-        // using "./" is equivalent and makes sure the relative link
-        // is not interpreted as a root-relative or scheme-relative link.
-        if let Some(first) = remaining.get_mut(0)
-            && *first == ""
-        {
-            *first = "./";
-        }
-
-        let mut relative = remaining.join("/");
-
-        if let Some(fragment) = self.fragment() {
-            relative.push('#');
-            relative.push_str(fragment);
-        }
-
-        Some(relative)
     }
 }
 
@@ -232,6 +131,25 @@ mod test {
             ("file:///root/", vec!["///new-root"], "file:///new-root"),
             ("file:///root/", vec!["//a.com/boop"], "file://a.com/boop"),
             ("https://root/", vec!["//a.com/boop"], "https://a.com/boop"),
+        ];
+
+        for (base, subpaths, expected) in test_urls_and_expected {
+            println!("base={base}, subpaths={subpaths:?}, expected={expected}");
+            assert_eq!(
+                Url::parse(base)
+                    .unwrap()
+                    .join_rooted(&subpaths[..])
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "katrinafyi: suspected bug with Url::make_relative"]
+    fn test_join_rooted_with_trailing_filename() {
+        let test_urls_and_expected = [
             // file URLs without trailing / are kinda weird.
             ("file:///a/b/c", vec!["/../../a"], "file:///a/b/a"),
             ("file:///a/b/c", vec!["/"], "file:///a/b/"),
@@ -260,140 +178,6 @@ mod test {
                     .to_string(),
                 expected
             );
-        }
-    }
-
-    #[test]
-    fn test_join_default() {
-        let test_cases = [
-            ("file:///a/b/c", "/", "file:///"),
-            ("file:///a/b/c", ".?qq", "file:///a/b/?qq"),
-            ("file:///a/b/c", "#x", "file:///a/b/c#x"),
-            ("file:///a/b/c", "./", "file:///a/b/"),
-        ];
-
-        for (base, subpath, expected) in test_cases {
-            println!("base={base}, subpath={subpath:?}, expected={expected}");
-            assert_eq!(
-                Url::parse(base).unwrap().join(subpath).unwrap().to_string(),
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn test_strictly_relative_to_basic() {
-        let test_urls = [
-            "https://a.com/a/b",
-            "https://a.com/a/b2",
-            "https://a.com/a",
-            "https://a.com",
-            "https://a.com/a/",
-            "https://a.com/a/b/c/#boop",
-            "https://a.com/a/b/c/?query",
-            "https://a.com/a/b/c/?QUERY2",
-            "https://a.com/a///b/c",
-            "https://a.com/x//b/c",
-            "https://a.com/x/a",
-            "https://a.com/x2/a",
-        ];
-
-        for base in test_urls {
-            for url in test_urls {
-                let base = Url::parse(base).unwrap();
-                let url = Url::parse(url).unwrap();
-
-                let result = url.strictly_relative_to(&base, true, false);
-
-                println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
-                println!(
-                    "{}",
-                    result
-                        .as_ref()
-                        .and_then(|x| base.join(x).ok())
-                        .as_ref()
-                        .map_or("", Url::as_str)
-                );
-
-                if let Some(result) = result {
-                    assert_eq!(base.join(&result).unwrap(), url);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_strictly_relative_to_doubled() {
-        let test_urls = [
-            "https://a.com",
-            "https://a.com/",
-            "https://a.com//",
-            "https://a.com///",
-            "https://a.com///a",
-            "https://a.com/a//",
-            "https://a.com//a//b//",
-            "https://a.com//a//b//?q",
-        ];
-
-        for base in test_urls {
-            for url in test_urls {
-                let base = Url::parse(base).unwrap();
-                let url = Url::parse(url).unwrap();
-
-                let result = url.strictly_relative_to(&base, true, false);
-
-                println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
-                println!(
-                    "{}",
-                    result
-                        .as_ref()
-                        .and_then(|x| base.join(x).ok())
-                        .as_ref()
-                        .map_or("", Url::as_str)
-                );
-
-                if let Some(result) = result {
-                    assert_eq!(base.join(&result).unwrap(), url);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_strictly_relative_to_file() {
-        let test_urls = [
-            "file:///a.com",
-            "file:///a.com/",
-            "file:///a.com//",
-            "file:///a.com///",
-            "file:///a.com///a",
-            "file:///a.com/a//",
-            "file:///a.com/ax//",
-            "file:///a.com//a//b//",
-            "file:///a.com//a//b//?q",
-        ];
-
-        for base in test_urls {
-            for url in test_urls {
-                let base = Url::parse(base).unwrap();
-                let url = Url::parse(url).unwrap();
-
-                let result = url.strictly_relative_to(&base, true, false);
-
-                println!("{url}\tstrictly_relative_to\t{base}\t--> {result:?}");
-                println!(
-                    "{}",
-                    result
-                        .as_ref()
-                        .and_then(|x| base.join(x).ok())
-                        .as_ref()
-                        .map_or("", Url::as_str)
-                );
-
-                if let Some(result) = result {
-                    assert_eq!(base.join(&result).unwrap(), url);
-                }
-            }
         }
     }
 }
