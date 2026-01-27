@@ -347,7 +347,14 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
         return Ok(exit_code as i32);
     }
 
-    let mut collector = Collector::new(opts.config.root_dir.clone(), base)?
+    let root_and_base = match (opts.config.root_dir.clone(), base) {
+        (None, None) => None,
+        (Some(root_dir), base) => Some((root_dir, base)),
+        // clap requirements should make this panic unreachable
+        (None, Some(_base)) => panic!("root dir must be specified when base is specified!"),
+    };
+
+    let mut collector = Collector::new(root_and_base, opts.config.fallback_base_url.clone())?
         .skip_missing_inputs(opts.config.skip_missing)
         .skip_hidden(!opts.config.hidden)
         // be aware that "no ignore" means do *not* ignore files

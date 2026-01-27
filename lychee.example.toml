@@ -117,6 +117,9 @@ base_url = "https://example.com"
 # Root path to use when checking absolute local links, must be an absolute path
 root_dir = "/dist"
 
+# Fallback base URL to use for input sources with no base URL
+fallback_base_url = "https://example.com/fallback.html"
+
 # HTTP basic auth support. This will be the username and password passed to the
 # authorization HTTP header. See
 # <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Authorization>
