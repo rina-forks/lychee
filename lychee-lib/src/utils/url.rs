@@ -32,35 +32,36 @@ pub(crate) fn is_scheme_relative_link(text: &str) -> bool {
 }
 
 pub(crate) trait ReqwestUrlExt {
-    /// Joins the given subpaths, using the current URL as the base URL.
+    /// Joins the given subpaths, using the current URL as the base URL and
+    /// the given root for roor-relative links.
     ///
-    /// Conceptually, `url.join_rooted(&[path])` is very similar to
-    /// `url.join(path)` (using [`Url::join`]). However, they differ when
-    /// the base URL is a `file:` URL.
+    /// Conceptually, `url.join_rooted(path, root)` is similar to
+    /// [`url.join(path)`][`Url::join`] in moat cases. However, they
+    /// differ when the given subpath is a [root-relative link][`is_root_relative_link`]
+    /// and the base URL is a `file:` URL.
     ///
-    /// When used with a `file:` base URL, [`ReqwestUrlExt::join_rooted`]
-    /// will treat root-relative links as locally-relative links, relative
-    /// to the `file:` base URL.
+    /// When subpath is a root-relative link and the base URL is a `file:` URL, then the subpath
+    /// will be resolved relative to the given root, instead of the base URL. Additionally, if the
+    /// given *root* is a `file:` URL, then the root-relative link will be treated as
+    /// locally-relative to the given root.
     ///
-    /// Other relative links and links with non-`file:` bases are joined
-    /// normally, matching the behaviour of [`Url::join`].
-    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError>;
+    /// Other relative links are joined normally, matching the behaviour of
+    /// [`Url::join`].
+    fn join_rooted(&self, subpath: &str, root: &Url) -> Result<Url, ParseError>;
 }
 
 impl ReqwestUrlExt for Url {
-    fn join_rooted(&self, subpaths: &[&str]) -> Result<Url, ParseError> {
-        let mut url = Cow::Borrowed(self);
-
-        for subpath in subpaths {
-            if url.scheme() == "file" && is_root_relative_link(subpath) {
+    fn join_rooted(&self, subpath: &str, root: &Url) -> Result<Url, ParseError> {
+        if self.scheme() == "file" && is_root_relative_link(subpath) {
+            if root.scheme() == "file" {
                 let locally_relative = format!(".{}", subpath.trim_ascii_start());
-                url = Cow::Owned(self.join(&locally_relative)?);
+                root.join(&locally_relative)
             } else {
-                url = Cow::Owned(url.join(subpath)?);
+                root.join(subpath)
             }
+        } else {
+            self.join(subpath)
         }
-
-        Ok(url.into_owned())
     }
 }
 
