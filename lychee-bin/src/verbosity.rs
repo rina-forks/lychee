@@ -1,6 +1,6 @@
 use log::Level;
 use log::LevelFilter;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 /// Control the verbosity of the CLI output
@@ -108,6 +108,16 @@ impl<'de> Deserialize<'de> for Verbosity {
             verbose: level_value(level),
             quiet: 0,
         })
+    }
+}
+
+impl Serialize for Verbosity {
+    #[allow(clippy::cast_sign_loss)]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.log_level().as_str())
     }
 }
 

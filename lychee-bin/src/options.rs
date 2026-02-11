@@ -19,7 +19,7 @@ use lychee_lib::{
 };
 use reqwest::tls;
 use secrecy::SecretString;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs, path::PathBuf, str::FromStr, time::Duration};
@@ -56,7 +56,17 @@ const TIMEOUT_STR: &str = concatcp!(DEFAULT_TIMEOUT_SECS);
 const RETRY_WAIT_TIME_STR: &str = concatcp!(DEFAULT_RETRY_WAIT_TIME_SECS);
 
 #[derive(
-    Debug, Deserialize, Default, Clone, Display, EnumIter, EnumString, VariantNames, PartialEq, Eq,
+    Debug,
+    Serialize,
+    Deserialize,
+    Default,
+    Clone,
+    Display,
+    EnumIter,
+    EnumString,
+    VariantNames,
+    PartialEq,
+    Eq,
 )]
 #[non_exhaustive]
 pub(crate) enum TlsVersion {
@@ -86,7 +96,9 @@ impl From<TlsVersion> for tls::Version {
 }
 
 /// The format to use for the final status report
-#[derive(Debug, Deserialize, Default, Clone, Display, EnumIter, VariantNames, PartialEq)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, Display, EnumIter, VariantNames, PartialEq,
+)]
 #[non_exhaustive]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -119,7 +131,16 @@ impl FromStr for StatsFormat {
 /// This decides over whether to use color,
 /// emojis, or plain text for the output.
 #[derive(
-    Debug, Deserialize, Default, Clone, Display, EnumIter, EnumString, VariantNames, PartialEq,
+    Debug,
+    Serialize,
+    Deserialize,
+    Default,
+    Clone,
+    Display,
+    EnumIter,
+    EnumString,
+    VariantNames,
+    PartialEq,
 )]
 #[non_exhaustive]
 pub(crate) enum OutputMode {
@@ -385,7 +406,7 @@ where
 
 /// The main configuration for lychee
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Parser, Debug, Deserialize, Clone, Default)]
+#[derive(Parser, Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     /// Read input filenames from the given file or stdin (if path is '-').

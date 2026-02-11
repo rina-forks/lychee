@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt::Display, hash::BuildHasher, str::FromStr, sync::LazyLock};
 
 use http::StatusCode;
-use serde::{Deserialize, de::Visitor};
+use serde::{Deserialize, Serialize, de::Visitor};
 use thiserror::Error;
 
 use crate::{StatusRangeError, types::accept::StatusRange};
@@ -21,7 +21,7 @@ pub enum StatusCodeSelectorError {
 
 /// A [`StatusCodeSelector`] holds ranges of HTTP status codes, and determines
 /// whether a specific code is matched.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct StatusCodeSelector {
     ranges: Vec<StatusRange>,
 }

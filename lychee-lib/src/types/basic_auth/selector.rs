@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::str::FromStr;
 
 use serde_with::DeserializeFromStr;
@@ -35,6 +36,12 @@ pub struct BasicAuthSelector {
 
     /// This regex matches URLs which will use the basic auth credentials
     pub raw_uri_regex: String,
+}
+
+impl Display for BasicAuthSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.raw_uri_regex, self.credentials)
+    }
 }
 
 impl FromStr for BasicAuthSelector {

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use url::Url;
 
@@ -20,7 +20,7 @@ use crate::types::Result;
 /// let host_key = HostKey::try_from(&url).unwrap();
 /// assert_eq!(host_key.as_str(), "api.github.com");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HostKey(String);
 
 impl HostKey {

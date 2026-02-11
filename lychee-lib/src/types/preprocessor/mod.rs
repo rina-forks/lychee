@@ -1,6 +1,6 @@
 use std::{path::PathBuf, process::Command};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::{ErrorKind, Result};
 
@@ -12,7 +12,7 @@ use super::{ErrorKind, Result};
 /// For example using `cat` is equivalent to not specifying any preprocessor command.
 /// To invoke programs with custom arguments,
 /// create a shell script to specify it as preprocessor command.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Preprocessor {
     command: String,
 }

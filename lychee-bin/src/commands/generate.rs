@@ -9,7 +9,7 @@ use clap_mangen::{
     Man,
     roff::{Roff, roman},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, VariantNames};
 
 use crate::LycheeOptions;
@@ -70,7 +70,9 @@ const EXIT_CODE_SECTION: &str = "
 ";
 
 /// What to generate when providing the --generate flag
-#[derive(Debug, Deserialize, Clone, Display, EnumIter, EnumString, VariantNames, PartialEq)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, Display, EnumIter, EnumString, VariantNames, PartialEq,
+)]
 #[non_exhaustive]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]

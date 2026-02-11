@@ -1,5 +1,5 @@
 use reqwest::{Error, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use strum::{Display, EnumIter, EnumString, VariantNames};
 
@@ -8,7 +8,17 @@ mod wayback;
 /// The different supported online archive sites for restoring broken links.
 #[non_exhaustive]
 #[derive(
-    Debug, Deserialize, Default, Clone, Display, EnumIter, EnumString, VariantNames, PartialEq, Eq,
+    Debug,
+    Serialize,
+    Deserialize,
+    Default,
+    Clone,
+    Display,
+    EnumIter,
+    EnumString,
+    VariantNames,
+    PartialEq,
+    Eq,
 )]
 pub enum Archive {
     #[serde(rename = "wayback")]

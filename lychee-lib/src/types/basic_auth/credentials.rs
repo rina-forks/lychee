@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::fmt::Display;
 use std::str::FromStr;
 
 use headers::authorization::Credentials;
@@ -36,6 +37,12 @@ pub struct BasicAuthCredentials {
 
     /// Basic auth password
     pub password: String,
+}
+
+impl Display for BasicAuthCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.username, self.password)
+    }
 }
 
 impl FromStr for BasicAuthCredentials {

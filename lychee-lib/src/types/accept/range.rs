@@ -5,6 +5,7 @@ use std::{
 
 use http::StatusCode;
 use regex::Regex;
+use serde::Serialize;
 use thiserror::Error;
 
 /// Smallest accepted value
@@ -46,7 +47,7 @@ pub enum StatusRangeError {
 /// considered successful when checking a remote URL.
 /// Only represents valid status codes,
 /// invalid status codes (<100 or >999) are rejected.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Serialize, Debug, PartialEq)]
 pub struct StatusRange(RangeInclusive<u16>);
 
 impl FromStr for StatusRange {
