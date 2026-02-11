@@ -134,47 +134,17 @@ fn read_lines(file: &File) -> Result<Vec<String>> {
         .collect())
 }
 
-fn merge(base: toml::value::Table, overrides: toml::value::Table) -> toml::value::Table {
-    let mut base = base;
-
-    use toml::map::Entry::{Occupied, Vacant};
-
-    let mut overrides = overrides;
-    match (base.entry("headers"), overrides.remove("headers")) {
-        (Vacant(_), None) | (Occupied(_), None) => (),
-        (Vacant(x), Some(y)) => {
-            x.insert(y);
-        }
-        (Occupied(mut l), Some(r)) => {
-            l.insert(r); // TODO: merge headers
-        }
-    }
-
-    for (k, v) in overrides {
-        base.insert(k, v);
-    }
-    base
-}
-
 /// Merge all provided config options into one.
 /// This includes a potential config file, command-line- and environment variables
 fn load_config() -> Result<LycheeOptions> {
+
     let command = <LycheeOptions as clap::CommandFactory>::command();
-    let ids = command
-        .get_arguments()
-        .map(|arg| arg.get_id().as_str().to_string())
-        .collect::<Vec<_>>();
+    let ids = command.get_arguments().map(|arg| arg.get_id().as_str().to_string()).collect::<Vec<_>>();
     println!("{:?}", ids);
     let mut matches = command.get_matches();
-    println!(
-        "{:?}",
-        ids.into_iter()
-            .map(|x| (x.clone(), matches.value_source(&x)))
-            .collect::<Vec<_>>()
-    );
+    println!("{:?}", ids.into_iter().map(|x| (x.clone(), matches.value_source(&x))).collect::<Vec<_>>());
 
-    let mut opts =
-        <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches).unwrap();
+    let mut opts = <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches).unwrap();
 
     init_logging(&opts.config.verbose, &opts.config.mode);
 
