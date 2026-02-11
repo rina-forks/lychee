@@ -20,6 +20,7 @@ use lychee_lib::{
 use reqwest::tls;
 use secrecy::SecretString;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
+use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs, path::PathBuf, str::FromStr, time::Duration};
@@ -423,29 +424,9 @@ impl LycheeOptions {
     }
 }
 
-// Custom deserializer function for the header field
-fn deserialize_headers<'de, D>(deserializer: D) -> Result<Vec<(String, String)>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let map = HashMap::<String, String>::deserialize(deserializer)?;
-    Ok(map.into_iter().collect())
-}
-
-// Custom deserializer function for the header field
-fn serialize_headers<S>(headers: &Vec<(String, String)>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    headers
-        .into_iter()
-        .map(|(x, y)| (x, y))
-        .collect::<HashMap<_, _>>()
-        .serialize(serializer)
-}
-
 /// The main configuration for lychee
 #[allow(clippy::struct_excessive_bools)]
+#[serde_as]
 #[derive(Parser, Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
@@ -779,10 +760,7 @@ The specified headers are used for ALL requests.
 Use the `hosts` option to configure headers on a per-host basis."
     )]
     #[serde(default)]
-    #[serde(
-        deserialize_with = "deserialize_headers",
-        serialize_with = "serialize_headers"
-    )]
+    #[serde_as(as = "HashMap<_, _>")]
     pub header: Vec<(String, String)>,
 
     /// A List of accepted status codes for valid links

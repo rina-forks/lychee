@@ -2359,6 +2359,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "strum",
  "supports-color",
  "tabled",
