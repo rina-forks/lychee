@@ -333,7 +333,7 @@ use `--files-from` to read inputs from a file.
 
 NOTE: Use `--` to separate inputs from options that allow multiple arguments."
     )]
-    raw_inputs: Vec<String>,
+    pub(crate) raw_inputs: Vec<String>,
 
     /// Configuration file to use
     #[arg(short, long = "config")]
