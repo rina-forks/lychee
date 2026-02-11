@@ -19,7 +19,7 @@ use lychee_lib::{
 };
 use reqwest::tls;
 use secrecy::SecretString;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs, path::PathBuf, str::FromStr, time::Duration};
@@ -131,11 +131,14 @@ impl FromStr for StatsFormat {
 pub(crate) struct RedactedSerializeSecretString(SecretString);
 
 impl Serialize for RedactedSerializeSecretString {
+    /// Serializes to an invalid (non-string) type so deserialization will fail.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{:?}", self.0))
+        let mut map = serializer.serialize_map(Some(1))?;
+        map.serialize_entry("redacted", &format!("{:?}", self.0))?;
+        map.end()
     }
 }
 
@@ -886,7 +889,7 @@ followed by the absolute link's own path."
 
     /// GitHub API token to use when checking github.com links, to avoid rate limiting
     #[arg(long, env = "GITHUB_TOKEN", hide_env_values = true)]
-    #[serde(default, rename(serialize = "github_token_redacted"))]
+    #[serde(default)]
     pub(crate) github_token: Option<RedactedSerializeSecretString>,
 
     /// Skip missing input files (default is to error if they don't exist)

@@ -151,8 +151,7 @@ fn load_config() -> Result<LycheeOptions> {
             .collect::<Vec<_>>()
     );
 
-    let mut opts =
-        <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches).unwrap();
+    let opts = <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches).unwrap();
 
     let t = toml::Table::try_from(opts.config).unwrap();
     println!("{}", t);
