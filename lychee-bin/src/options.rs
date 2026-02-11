@@ -19,7 +19,7 @@ use lychee_lib::{
 };
 use reqwest::tls;
 use secrecy::SecretString;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::{fs, path::PathBuf, str::FromStr, time::Duration};
@@ -123,6 +123,31 @@ impl FromStr for StatsFormat {
             "raw" => Ok(StatsFormat::Raw),
             _ => Err(anyhow!("Unknown format {format}")),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(transparent)]
+pub(crate) struct RedactedSerializeSecretString(SecretString);
+
+impl Serialize for RedactedSerializeSecretString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{:?}", self.0))
+    }
+}
+
+impl Into<SecretString> for RedactedSerializeSecretString {
+    fn into(self) -> SecretString {
+        self.0
+    }
+}
+
+impl From<&str> for RedactedSerializeSecretString {
+    fn from(s: &str) -> Self {
+        Self(SecretString::from(s))
     }
 }
 
@@ -354,7 +379,7 @@ use `--files-from` to read inputs from a file.
 
 NOTE: Use `--` to separate inputs from options that allow multiple arguments."
     )]
-    raw_inputs: Vec<String>,
+    pub(crate) raw_inputs: Vec<String>,
 
     /// Configuration file to use
     #[arg(short, long = "config")]
@@ -402,6 +427,18 @@ where
 {
     let map = HashMap::<String, String>::deserialize(deserializer)?;
     Ok(map.into_iter().collect())
+}
+
+// Custom deserializer function for the header field
+fn serialize_headers<S>(headers: &Vec<(String, String)>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    headers
+        .into_iter()
+        .map(|(x, y)| (x, y))
+        .collect::<HashMap<_, _>>()
+        .serialize(serializer)
 }
 
 /// The main configuration for lychee
@@ -739,7 +776,10 @@ The specified headers are used for ALL requests.
 Use the `hosts` option to configure headers on a per-host basis."
     )]
     #[serde(default)]
-    #[serde(deserialize_with = "deserialize_headers")]
+    #[serde(
+        deserialize_with = "deserialize_headers",
+        serialize_with = "serialize_headers"
+    )]
     pub header: Vec<(String, String)>,
 
     /// A List of accepted status codes for valid links
@@ -846,8 +886,8 @@ followed by the absolute link's own path."
 
     /// GitHub API token to use when checking github.com links, to avoid rate limiting
     #[arg(long, env = "GITHUB_TOKEN", hide_env_values = true)]
-    #[serde(default)]
-    pub(crate) github_token: Option<SecretString>,
+    #[serde(default, rename(serialize = "github_token_redacted"))]
+    pub(crate) github_token: Option<RedactedSerializeSecretString>,
 
     /// Skip missing input files (default is to error if they don't exist)
     #[arg(long)]

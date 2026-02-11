@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-use serde_with::DeserializeFromStr;
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use thiserror::Error;
 
 use crate::{BasicAuthCredentials, types::basic_auth::BasicAuthCredentialsParseError};
@@ -29,7 +29,7 @@ pub enum BasicAuthSelectorParseError {
 /// [`BasicAuthSelector`] provides basic auth credentials for URLs which match
 /// the specified regex. This allows users to set different credentials based
 /// on the URLs they want to target.
-#[derive(Debug, Clone, DeserializeFromStr, PartialEq)]
+#[derive(Debug, Clone, DeserializeFromStr, SerializeDisplay, PartialEq)]
 pub struct BasicAuthSelector {
     /// The basic auth credentials made up of username and password
     pub credentials: BasicAuthCredentials,
@@ -40,7 +40,7 @@ pub struct BasicAuthSelector {
 
 impl Display for BasicAuthSelector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.raw_uri_regex, self.credentials)
+        write!(f, "{} {}", self.raw_uri_regex, self.credentials)
     }
 }
 

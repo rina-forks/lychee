@@ -154,6 +154,15 @@ fn load_config() -> Result<LycheeOptions> {
     let mut opts =
         <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches).unwrap();
 
+    let t = toml::Table::try_from(opts.config).unwrap();
+    println!("{}", t);
+
+    let mut opts = LycheeOptions {
+        raw_inputs: opts.raw_inputs,
+        config_file: opts.config_file,
+        config: t.try_into::<Config>().unwrap(),
+    };
+
     init_logging(&opts.config.verbose, &opts.config.mode);
 
     // Load a potentially existing config file and merge it into the config from
