@@ -14,7 +14,7 @@ macro_rules! make_merger {
             $field_variant:ident
             =
             $field_name:ident
-            $( -> $field_ty:ty )?
+            $( => |$x:ident, $y:ident| $joiner:expr )?
             ,
         )*
         // https://internals.rust-lang.org/t/macro-metavariables-matching-an-empty-fragment/18678/3
@@ -61,10 +61,7 @@ macro_rules! make_merger {
             }
         }
 
-        $merger_vis struct $merger_struct {
-            $( $( $field_name: &dyn Fn($field_ty, $field_ty) -> $field_ty, )? )*
-            // NOTE: will break if any $field_ty is a reference, because we have no lifetimes.
-        }
+        $merger_vis struct $merger_struct;
 
         impl $merger_struct {
             /// Merges the two values with overriding. Fields in `overrides`
@@ -79,15 +76,15 @@ macro_rules! make_merger {
                 overrides: $ty,
                 field_is_defined: &dyn Fn($fields_enum) -> bool,
             ) -> $ty {
+
+
                 $ty {
                 $(
                 $field_name: if field_is_defined($fields_enum::$field_variant) {
                     $( if (true) {
-                        let args = (base.$field_name, overrides.$field_name);
-                        let joiner_args: ($field_ty, $field_ty) = args; // <-- (ignore this, look at other errors first!)
-                        let x = (self.$field_name)(joiner_args.0, joiner_args.1);
-                        let joiner_function_result: $field_ty = x;
-                        joiner_function_result // <-- type mismatch means an incorrect type was written in a `make_merger!` enum variant
+                        let $x = base.$field_name;
+                        let $y = overrides.$field_name;
+                        $joiner
                     } else )? {
                         overrides.$field_name
                     }
@@ -161,9 +158,9 @@ Format = format,
 Generate = generate,
 GithubToken = github_token,
 GlobIgnoreCase = glob_ignore_case,
-Header = header,
+Header = header => |x, y| x.into_iter().chain(y.into_iter()).collect(),
 Hidden = hidden,
-Hosts = hosts,
+Hosts = hosts => |x, y| x.into_iter().chain(y.into_iter()).collect(),
 HostConcurrency = host_concurrency,
 HostRequestInterval = host_request_interval,
 HostStats = host_stats,
