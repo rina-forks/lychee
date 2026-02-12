@@ -1016,8 +1016,8 @@ impl Config {
         Ok(toml::Table::try_from(&contents)?)
     }
 
-    pub(crate) fn clap_name_to_serde_name(clap_name: &str) -> Option<&str> {
-        match clap_name {
+    pub(crate) fn clap_name_to_serde_name(clap_id: &clap::Id) -> Option<&str> {
+        match clap_id.as_str() {
             "quiet" => Some("verbose"),
             "base" => Some("base_url"),
 
@@ -1034,29 +1034,31 @@ impl Config {
     pub(crate) fn arg_matches_to_toml(matches: ArgMatches) -> Result<(LycheeOptions, toml::Table)> {
         let command = <LycheeOptions as clap::CommandFactory>::command();
 
-        let mut matches = matches;
-
-        let clap_args: HashMap<&clap::Id, Option<ValueSource>> = command
+        let defined_clap_args: HashSet<&clap::Id> = command
             .get_arguments()
             .map(|arg| arg.get_id())
-            .map(|id| (id, matches.value_source(id.as_str())))
+            .filter(|id| matches.value_source(id.as_str()) == Some(ValueSource::CommandLine))
             .collect();
 
-        println!("{:?}", clap_args);
+        let mut matches = matches;
 
+        println!("{:?}", defined_clap_args);
+
+        // NOTE: value_source will always return None after from_arg_matches_mut!
+        // be sure to use value_source before this point
         let lychee_options =
             <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)?;
 
+        // serialize the CLI args into TOML, then filter the TOML to only the fields
+        // which were properly defined on the command-line. be careful with clap names
+        // vs serde names.
         let mut full_toml = toml::Table::try_from(lychee_options.config.clone())?;
 
-        let serde_fields_to_keep = clap_args.iter().filter_map(|x| match x {
-            (id, Some(ValueSource::CommandLine)) => Config::clap_name_to_serde_name(id.as_str()),
-            _ => None
-        }).collect::<HashSet<_>>();
-
         let mut toml = toml::Table::new();
-        for field in serde_fields_to_keep {
-            if let Some((k, v)) = full_toml.remove_entry(field) {
+        for clap_name in defined_clap_args {
+            if let Some(toml_name) = Config::clap_name_to_serde_name(clap_name)
+                && let Some((k, v)) = full_toml.remove_entry(toml_name)
+            {
                 toml.insert(k, v);
             }
         }
@@ -1299,7 +1301,7 @@ mod tests {
         let command = <LycheeOptions as clap::CommandFactory>::command();
         let clap_names = command
             .get_arguments()
-            .map(|arg| arg.get_id().as_str())
+            .map(|arg| arg.get_id())
             .filter_map(Config::clap_name_to_serde_name)
             .collect::<BTreeSet<_>>();
 
