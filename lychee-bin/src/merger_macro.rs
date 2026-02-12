@@ -1,4 +1,5 @@
 use crate::options::Config;
+use std::collections::HashSet;
 
 // Macro for merging configuration values
 macro_rules! make_merger {
@@ -26,7 +27,7 @@ macro_rules! make_merger {
         #[doc = "This is useful for introspecting struct fields (e.g., when" ]
         #[doc = "determining which fields are user-defined), and this can be" ]
         #[doc = "done in a type-safe way." ]
-        #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+        #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
         $vis enum $fields_enum {
 
             $(
@@ -196,26 +197,32 @@ fn _f() {
     };
 }
 
-fn all_toml_names() -> &'static [&'static str] {
+pub(crate) fn all_toml_names() -> &'static [&'static str] {
     serde_aux::serde_introspection::serde_introspect::<Config>()
 }
 
-fn all_clap_args() -> Vec<clap::Id> {
+pub(crate) fn all_clap_args() -> Vec<clap::Id> {
     <Config as clap::CommandFactory>::command()
         .get_arguments()
         .map(|arg| arg.get_id().clone())
         .collect()
 }
 
-fn toml_name_to_field(x: &str) -> Option<ConfigField> {
-    Some(ConfigField::from_field_name(x).unwrap())
+pub(crate) fn toml_name_to_field(x: &str) -> Option<ConfigField> {
+    ConfigField::from_field_name(x).ok()
 }
 
-fn clap_arg_to_field(x: &clap::Id) -> Option<ConfigField> {
+pub(crate) fn clap_arg_to_field(x: &clap::Id) -> Option<ConfigField> {
     match x.as_str() {
         "quiet" => Some(ConfigField::Verbose),
-        s => Some(ConfigField::from_field_name(s).unwrap())
+        s => ConfigField::from_field_name(s).ok(),
     }
+}
+
+pub(crate) fn merge(x: Config, other: Config, defined_set: &HashSet<ConfigField>) -> Config {
+    println!("defined: {:?}", defined_set);
+    let is_defined = |x| defined_set.contains(&x);
+    ConfigMerger {}.merge(x, other, &is_defined)
 }
 
 #[cfg(test)]
@@ -226,10 +233,10 @@ mod tests {
     #[test]
     fn test_toml_name() {
         for x in all_toml_names() {
-            toml_name_to_field(x);
+            assert!(toml_name_to_field(x).is_some());
         }
         for x in all_clap_args() {
-            clap_arg_to_field(&x);
+            assert!(clap_arg_to_field(x).is_some());
         }
     }
 }

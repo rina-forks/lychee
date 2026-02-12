@@ -1003,10 +1003,21 @@ impl Config {
     }
 
     /// Load configuration from a file
-    pub(crate) fn load_from_file(path: &Path) -> Result<Config> {
-        // Read configuration file
+    pub(crate) fn load_from_file(
+        path: &Path,
+    ) -> Result<(Config, HashSet<crate::merger_macro::ConfigField>)> {
         let contents = fs::read_to_string(path)?;
-        toml::from_str(&contents).with_context(|| "Failed to parse configuration file")
+
+        // First load as TOML table so we can query which key names were defined.
+        let toml: toml::Table =
+            toml::from_str(&contents).with_context(|| "Failed to parse configuration file")?;
+
+        let defined: HashSet<_> = toml
+            .keys()
+            .filter_map(|x| crate::merger_macro::toml_name_to_field(&x))
+            .collect();
+
+        Ok((toml.try_into()?, defined))
     }
 
     pub(crate) fn toml_from_file(path: &Path) -> Result<toml::Table> {
@@ -1029,13 +1040,16 @@ impl Config {
         }
     }
 
-    pub(crate) fn arg_matches_to_toml(matches: ArgMatches) -> Result<(LycheeOptions, toml::Table)> {
-        let command = <LycheeOptions as clap::CommandFactory>::command();
+    pub(crate) fn arg_matches_to_toml(
+        matches: ArgMatches,
+    ) -> Result<(LycheeOptions, HashSet<crate::merger_macro::ConfigField>)> {
+        let command = <Config as clap::CommandFactory>::command();
 
-        let defined_clap_args: HashSet<&clap::Id> = command
+        let defined_clap_args: HashSet<_> = command
             .get_arguments()
             .map(|arg| arg.get_id())
             .filter(|id| matches.value_source(id.as_str()) == Some(ValueSource::CommandLine))
+            .filter_map(crate::merger_macro::clap_arg_to_field)
             .collect();
 
         let mut matches = matches;
@@ -1047,23 +1061,7 @@ impl Config {
         let lychee_options =
             <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)?;
 
-        // serialize the CLI args into TOML, then filter the TOML to only the fields
-        // which were properly defined on the command-line. be careful with clap names
-        // vs serde names.
-        let mut full_toml = toml::Table::try_from(lychee_options.config.clone())?;
-
-        let mut toml = toml::Table::new();
-        for clap_name in defined_clap_args {
-            if let Some(toml_name) = Config::clap_name_to_serde_name(clap_name)
-                && let Some((k, v)) = full_toml.remove_entry(toml_name)
-            //  ^-- this second pattern match should always succeed. logic error if not.
-            {
-                toml.insert(k, v);
-            }
-        }
-        dbg!(&toml);
-
-        Ok((lychee_options, toml))
+        Ok((lychee_options, defined_clap_args))
     }
 
     pub(crate) fn merge_tomls(mut base: toml::Table, mut overrides: toml::Table) -> toml::Table {

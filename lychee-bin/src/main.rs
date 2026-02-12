@@ -141,7 +141,7 @@ fn load_config() -> Result<LycheeOptions> {
     let command = <LycheeOptions as clap::CommandFactory>::command();
 
     let matches = command.get_matches();
-    let (mut opts, cli_toml) = Config::arg_matches_to_toml(matches)?;
+    let (mut opts, cli_defined) = Config::arg_matches_to_toml(matches)?;
 
     init_logging(&opts.config.verbose, &opts.config.mode);
 
@@ -157,7 +157,7 @@ fn load_config() -> Result<LycheeOptions> {
         Some(("default", PathBuf::from(LYCHEE_CONFIG_FILE))).filter(|x| x.1.exists());
 
     if let Some((source, path)) = specified_config_file.or(default_config_file) {
-        let config_toml = match Config::toml_from_file(&path) {
+        let (toml_config, _toml_defined) = match Config::load_from_file(&path) {
             Ok(c) => c,
             Err(e) => {
                 bail!(
@@ -167,7 +167,7 @@ fn load_config() -> Result<LycheeOptions> {
             }
         };
 
-        opts.config = Config::merge_tomls(config_toml, cli_toml).try_into()?;
+        opts.config = crate::merger_macro::merge(toml_config, opts.config, &cli_defined);
     }
 
     if let Ok(lycheeignore) = File::open(LYCHEE_IGNORE_FILE) {
