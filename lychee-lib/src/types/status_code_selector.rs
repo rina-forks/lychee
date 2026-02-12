@@ -111,6 +111,16 @@ impl StatusCodeSelector {
     }
 }
 
+impl<S: BuildHasher + Default> From<StatusCodeSelector> for HashSet<StatusCode, S> {
+    fn from(value: StatusCodeSelector) -> Self {
+        value
+            .ranges
+            .into_iter()
+            .flat_map(<HashSet<StatusCode>>::from)
+            .collect()
+    }
+}
+
 struct StatusCodeSelectorVisitor;
 
 impl<'de> Visitor<'de> for StatusCodeSelectorVisitor {
@@ -170,16 +180,6 @@ impl<'de> Deserialize<'de> for StatusCodeSelector {
         D: serde::Deserializer<'de>,
     {
         deserializer.deserialize_any(StatusCodeSelectorVisitor)
-    }
-}
-
-impl<S: BuildHasher + Default> From<StatusCodeSelector> for HashSet<StatusCode, S> {
-    fn from(value: StatusCodeSelector) -> Self {
-        value
-            .ranges
-            .into_iter()
-            .flat_map(<HashSet<StatusCode>>::from)
-            .collect()
     }
 }
 
