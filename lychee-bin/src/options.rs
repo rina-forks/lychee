@@ -1035,31 +1035,32 @@ impl Config {
         let command = <LycheeOptions as clap::CommandFactory>::command();
 
         let mut matches = matches;
+
+        let clap_args: HashMap<&clap::Id, Option<ValueSource>> = command
+            .get_arguments()
+            .map(|arg| arg.get_id())
+            .map(|id| (id, matches.value_source(id.as_str())))
+            .collect();
+
+        println!("{:?}", clap_args);
+
         let lychee_options =
             <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)?;
 
-        let clap_names = command
-            .get_arguments()
-            .map(|arg| arg.get_id())
-            .collect::<Vec<_>>();
+        let mut full_toml = toml::Table::try_from(lychee_options.config.clone())?;
 
-        println!(
-        "{:?}",
-            clap_names
-                .iter()
-                .map(|x| (x.as_str(), matches.value_source(x.as_str())))
-                .collect::<Vec<_>>()
-        );
+        let serde_fields_to_keep = clap_args.iter().filter_map(|x| match x {
+            (id, Some(ValueSource::CommandLine)) => Config::clap_name_to_serde_name(id.as_str()),
+            _ => None
+        }).collect::<HashSet<_>>();
 
-        let defaulted_clap_names = clap_names
-            .into_iter()
-            .filter(|id| matches.value_source(id.as_str()) != Some(ValueSource::CommandLine));
-
-        let mut toml = toml::Table::try_from(lychee_options.config.clone())?;
-
-        for defaulted_name in defaulted_clap_names {
-            toml.remove(defaulted_name.as_str());
+        let mut toml = toml::Table::new();
+        for field in serde_fields_to_keep {
+            if let Some((k, v)) = full_toml.remove_entry(field) {
+                toml.insert(k, v);
+            }
         }
+        dbg!(&toml);
 
         Ok((lychee_options, toml))
     }
