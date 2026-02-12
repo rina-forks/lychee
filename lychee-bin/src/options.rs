@@ -1058,6 +1058,7 @@ impl Config {
         for clap_name in defined_clap_args {
             if let Some(toml_name) = Config::clap_name_to_serde_name(clap_name)
                 && let Some((k, v)) = full_toml.remove_entry(toml_name)
+            //  ^-- this second pattern match should always succeed. logic error if not.
             {
                 toml.insert(k, v);
             }
