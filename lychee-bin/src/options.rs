@@ -1014,7 +1014,7 @@ impl Config {
 
         let defined: HashSet<_> = toml
             .keys()
-            .filter_map(|x| crate::merger_macro::toml_name_to_field(&x))
+            .flat_map(|x| crate::merger_macro::toml_name_to_field(&x))
             .collect();
 
         Ok((toml.try_into()?, defined))
@@ -1049,7 +1049,7 @@ impl Config {
             .get_arguments()
             .map(|arg| arg.get_id())
             .filter(|id| matches.value_source(id.as_str()) == Some(ValueSource::CommandLine))
-            .filter_map(crate::merger_macro::clap_arg_to_field)
+            .flat_map(crate::merger_macro::clap_arg_to_field)
             .collect();
 
         let mut matches = matches;

@@ -219,14 +219,14 @@ pub(crate) fn all_clap_args() -> Vec<clap::Id> {
         .collect()
 }
 
-pub(crate) fn toml_name_to_field(x: &str) -> Option<ConfigField> {
-    ConfigField::from_field_name(x).ok()
+pub(crate) fn toml_name_to_field(x: &str) -> Result<ConfigField, &str> {
+    ConfigField::from_field_name(x)
 }
 
-pub(crate) fn clap_arg_to_field(x: &clap::Id) -> Option<ConfigField> {
+pub(crate) fn clap_arg_to_field(x: &clap::Id) -> Result<ConfigField, &str> {
     match x.as_str() {
-        "quiet" => Some(ConfigField::Verbose),
-        s => ConfigField::from_field_name(s).ok(),
+        "quiet" => Ok(ConfigField::Verbose),
+        s => ConfigField::from_field_name(s),
     }
 }
 
@@ -238,10 +238,10 @@ mod tests {
     #[test]
     fn test_toml_name() {
         for x in all_toml_names() {
-            assert!(toml_name_to_field(x).is_some());
+            toml_name_to_field(x).unwrap()
         }
         for x in all_clap_args() {
-            assert!(clap_arg_to_field(x).is_some());
+            clap_arg_to_field(x).unwrap()
         }
     }
 }
