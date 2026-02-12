@@ -1,3 +1,5 @@
+use crate::options::Config;
+
 // Macro for merging configuration values
 macro_rules! make_merger {
     (
@@ -50,20 +52,20 @@ macro_rules! make_merger {
             }
 
             /// Returns field variant from the given string, if possible.
-            $vis fn from_field_name(s: &str) -> Result<$fields_enum, ()> {
+            $vis fn from_field_name(s: &str) -> Result<$fields_enum, &str> {
                 match s {
                     $(stringify!($field_name) => Ok($fields_enum::$field_variant), )*
-                    _ => Err(())
+                    s => Err(s)
                 }
             }
         }
 
-        $merger_vis struct $merger_struct<'a> {
-            $( $( $field_name: &'a dyn Fn($field_ty, $field_ty) -> $field_ty, )? )*
+        $merger_vis struct $merger_struct {
+            $( $( $field_name: &dyn Fn($field_ty, $field_ty) -> $field_ty, )? )*
             // NOTE: will break if any $field_ty is a reference, because we have no lifetimes.
         }
 
-        impl $merger_struct<'_> {
+        impl $merger_struct {
             /// Merges the two values with overriding. Fields in `overrides`
             /// whose keys satisfy `field_is_defined` will overwrite the
             /// corresponding values from `base`.
@@ -76,10 +78,9 @@ macro_rules! make_merger {
                 overrides: $ty,
                 field_is_defined: &dyn Fn($fields_enum) -> bool,
             ) -> $ty {
-                let mut base = base;
-
+                $ty {
                 $(
-                base.$field_name = if field_is_defined($fields_enum::$field_variant) {
+                $field_name: if field_is_defined($fields_enum::$field_variant) {
                     $( if (true) {
                         let args = (base.$field_name, overrides.$field_name);
                         let joiner_args: ($field_ty, $field_ty) = args; // <-- (ignore this, look at other errors first!)
@@ -91,11 +92,10 @@ macro_rules! make_merger {
                     }
                 } else {
                     base.$field_name
-                };
+                },
 
                 )*
-
-                base
+                }
             }
         }
 
@@ -120,16 +120,116 @@ make_merger! {
     pub(crate) struct ConfigMerger;
 
     pub(crate) enum ConfigField {
-        Header = header -> Vec<(String, String)>,
-        GithubToken = github_token,
-        MaxConcurrency = max_concurrency -> usize,
+        // Header = header -> Vec<(String, String)>,
+        // GithubToken = github_token,
+        // MaxConcurrency = max_concurrency -> usize,
+
+Accept = accept,
+Archive = archive,
+Base = base,
+BaseUrl = base_url,
+BasicAuth = basic_auth,
+Cache = cache,
+CacheExcludeStatus = cache_exclude_status,
+CookieJar = cookie_jar,
+DefaultExtension = default_extension,
+Dump = dump,
+DumpInputs = dump_inputs,
+Exclude = exclude,
+ExcludeAllPrivate = exclude_all_private,
+ExcludeFile = exclude_file,
+ExcludeLinkLocal = exclude_link_local,
+ExcludeLoopback = exclude_loopback,
+ExcludePath = exclude_path,
+ExcludePrivate = exclude_private,
+Extensions = extensions,
+FallbackExtensions = fallback_extensions,
+FilesFrom = files_from,
+Format = format,
+Generate = generate,
+GithubToken = github_token,
+GlobIgnoreCase = glob_ignore_case,
+Header = header,
+Hidden = hidden,
+Hosts = hosts,
+HostConcurrency = host_concurrency,
+HostRequestInterval = host_request_interval,
+HostStats = host_stats,
+Include = include,
+IncludeFragments = include_fragments,
+IncludeMail = include_mail,
+IncludeVerbatim = include_verbatim,
+IncludeWikilinks = include_wikilinks,
+IndexFiles = index_files,
+Insecure = insecure,
+MaxCacheAge = max_cache_age,
+MaxConcurrency = max_concurrency,
+MaxRedirects = max_redirects,
+MaxRetries = max_retries,
+Method = method,
+MinTls = min_tls,
+Mode = mode,
+NoIgnore = no_ignore,
+NoProgress = no_progress,
+Offline = offline,
+Output = output,
+Preprocess = preprocess,
+Remap = remap,
+RequireHttps = require_https,
+RetryWaitTime = retry_wait_time,
+RootDir = root_dir,
+Scheme = scheme,
+SkipMissing = skip_missing,
+Suggest = suggest,
+Threads = threads,
+Timeout = timeout,
+UserAgent = user_agent,
+Verbose = verbose,
     }
 
 }
 
 fn _f() {
     let _ = ConfigMerger {
-        max_concurrency: &|a, b| a + b,
-        header: &|a, b| crate::Config::merge_headers2(&a, &b),
+        // max_concurrency: &|a, b| a + b,
+        // header: &|a, b| crate::Config::merge_headers2(&a, &b),
     };
+}
+
+fn all_toml_names() -> &'static [&'static str] {
+    serde_aux::serde_introspection::serde_introspect::<Config>()
+}
+
+fn all_clap_args() -> Vec<clap::Id> {
+    <Config as clap::CommandFactory>::command()
+        .get_arguments()
+        .map(|arg| arg.get_id().clone())
+        .collect()
+}
+
+fn toml_name_to_field(x: &str) -> Option<ConfigField> {
+    Some(ConfigField::from_field_name(x).unwrap())
+}
+
+fn clap_arg_to_field(x: &clap::Id) -> Option<ConfigField> {
+    match x.as_str() {
+        "quiet" => Some(ConfigField::Verbose),
+        s => Some(ConfigField::from_field_name(s).unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_toml_name() {
+        for x in all_toml_names() {
+            toml_name_to_field(x);
+        }
+        for x in all_clap_args() {
+            clap_arg_to_field(&x);
+        }
+    }
 }
