@@ -34,6 +34,13 @@ macro_rules! make_merger {
             #[doc = "Variant for the"]
             #[doc = concat!("[`", stringify!($ty), "::", stringify!($field_name), "`]") ]
             #[doc = "field." ]
+            $(
+            #[doc = "" ]
+            #[doc = "When merging, this field is merged using the expression:" ]
+            #[doc = "```" ]
+            #[doc = stringify!($joiner) ]
+            #[doc = "```" ]
+            )?
             $field_variant,
             )*
         }
@@ -187,7 +194,7 @@ NoProgress = no_progress,
 Offline = offline,
 Output = output,
 Preprocess = preprocess,
-Remap = remap,
+Remap = remap => |x, y| x.into_iter().chain(y.into_iter()).collect(),
 RequireHttps = require_https,
 RetryWaitTime = retry_wait_time,
 RootDir = root_dir,
