@@ -18,7 +18,7 @@ use lychee_lib::{
     FileType, Input, StatusCodeSelector, archive::Archive,
 };
 use reqwest::tls;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
 use serde_aux::serde_introspection::serde_introspect;
 use serde_with::serde_as;
@@ -130,27 +130,25 @@ impl FromStr for StatsFormat {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(transparent)]
-pub(crate) struct RedactedSerializeSecretString(SecretString);
+pub(crate) struct SerializableSecretString(SecretString);
 
-impl Serialize for RedactedSerializeSecretString {
+impl Serialize for SerializableSecretString {
     /// Serializes to an invalid (non-string) type so deserialization will fail.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let mut map = serializer.serialize_map(Some(1))?;
-        map.serialize_entry("redacted", &format!("{:?}", self.0))?;
-        map.end()
+        self.0.expose_secret().serialize(serializer)
     }
 }
 
-impl Into<SecretString> for RedactedSerializeSecretString {
+impl Into<SecretString> for SerializableSecretString {
     fn into(self) -> SecretString {
         self.0
     }
 }
 
-impl From<&str> for RedactedSerializeSecretString {
+impl From<&str> for SerializableSecretString {
     fn from(s: &str) -> Self {
         Self(SecretString::from(s))
     }
@@ -869,7 +867,7 @@ followed by the absolute link's own path."
     /// GitHub API token to use when checking github.com links, to avoid rate limiting
     #[arg(long, env = "GITHUB_TOKEN", hide_env_values = true)]
     #[serde(default)]
-    pub(crate) github_token: Option<RedactedSerializeSecretString>,
+    pub(crate) github_token: Option<SerializableSecretString>,
 
     /// Skip missing input files (default is to error if they don't exist)
     #[arg(long)]
@@ -1013,7 +1011,7 @@ impl Config {
 
     pub(crate) fn toml_from_file(path: &Path) -> Result<toml::Table> {
         let contents = fs::read_to_string(path)?;
-        Ok(toml::Table::try_from(&contents)?)
+        Ok(toml::from_str(&contents)?)
     }
 
     pub(crate) fn clap_name_to_serde_name(clap_id: &clap::Id) -> Option<&str> {
@@ -1068,12 +1066,23 @@ impl Config {
         Ok((lychee_options, toml))
     }
 
-    pub(crate) fn merge_tomls(base: toml::Table, overrides: toml::Table) -> toml::Table {
-        let mut base = base;
+    pub(crate) fn merge_tomls(mut base: toml::Table, mut overrides: toml::Table) -> toml::Table {
         // TODO: custom mergers for certain fields
+
+        // hmm this is not so great because of strings
+        if let Some(toml::Value::Table(prev)) = base.get_mut("header")
+            && let Some(toml::Value::Table(new)) = overrides.remove("header")
+        {
+            prev.extend(new);
+        }
+
         for (k, v) in overrides {
             base.insert(k, v);
         }
+
+        println!("{}", base);
+        panic!("panic after merging for testing");
+
         base
     }
 

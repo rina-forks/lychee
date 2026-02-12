@@ -22,7 +22,7 @@ pub enum StatusCodeSelectorError {
 
 /// A [`StatusCodeSelector`] holds ranges of HTTP status codes, and determines
 /// whether a specific code is matched.
-#[derive(Clone, Debug, DeserializeFromStr, SerializeDisplay, PartialEq)]
+#[derive(Clone, Debug, SerializeDisplay, PartialEq)]
 pub struct StatusCodeSelector {
     ranges: Vec<StatusRange>,
 }
@@ -50,6 +50,68 @@ impl Display for StatusCodeSelector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ranges: Vec<_> = self.ranges.iter().map(ToString::to_string).collect();
         write!(f, "{}", ranges.join(","))
+    }
+}
+
+struct StatusCodeSelectorVisitor;
+
+impl<'de> Visitor<'de> for StatusCodeSelectorVisitor {
+    type Value = StatusCodeSelector;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a string or a sequence of strings")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        StatusCodeSelector::from_str(v).map_err(serde::de::Error::custom)
+    }
+
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        let value = u16::try_from(v).map_err(serde::de::Error::custom)?;
+        Ok(StatusCodeSelector::new_from(vec![
+            StatusRange::new(value, value).map_err(serde::de::Error::custom)?,
+        ]))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut selector = StatusCodeSelector::empty();
+        while let Some(v) = seq.next_element::<toml::Value>()? {
+            if let Some(v) = v.as_integer() {
+                let value = u16::try_from(v).map_err(serde::de::Error::custom)?;
+                selector
+                    .add_range(StatusRange::new(value, value).map_err(serde::de::Error::custom)?);
+                continue;
+            }
+
+            if let Some(s) = v.as_str() {
+                let range = StatusRange::from_str(s).map_err(serde::de::Error::custom)?;
+                selector.add_range(range);
+                continue;
+            }
+
+            return Err(serde::de::Error::custom(
+                "failed to parse sequence of accept ranges",
+            ));
+        }
+        Ok(selector)
+    }
+}
+
+impl<'de> Deserialize<'de> for StatusCodeSelector {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(StatusCodeSelectorVisitor)
     }
 }
 
