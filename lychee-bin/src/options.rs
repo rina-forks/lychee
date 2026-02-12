@@ -450,7 +450,7 @@ File Format:
 - Lines starting with '#' are treated as comments and ignored.
 - Empty lines are also ignored."
     )]
-    files_from: Option<PathBuf>,
+    pub(crate) files_from: Option<PathBuf>,
 
     /// Verbose program output
     #[clap(flatten)]

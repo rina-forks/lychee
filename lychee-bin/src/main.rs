@@ -149,6 +149,7 @@ fn load_config() -> Result<LycheeOptions> {
         "{:?}",
         ids.into_iter()
             .map(|x| (x.clone(), matches.value_source(&x)))
+            .filter(|x| x.1 == Some(clap::parser::ValueSource::CommandLine))
             .collect::<Vec<_>>()
     );
 
@@ -165,33 +166,25 @@ fn load_config() -> Result<LycheeOptions> {
 
     init_logging(&opts.config.verbose, &opts.config.mode);
 
+
+    let specified_config_file = opts.config_file.take().map(|x| ("specified", x));
+
+    // If no config file was explicitly provided, we try to load the default
+    // config file from the current directory if the file exits. This will
+    // raise an error if the file is invalid, just like the explicit provided
+    // config file.
+    let default_config_file = Some(("default", PathBuf::from(LYCHEE_CONFIG_FILE))).filter(|x| x.1.exists());
+
     // Load a potentially existing config file and merge it into the config from
     // the CLI
-    if let Some(config_file) = &opts.config_file {
-        match Config::load_from_file(config_file) {
+    if let Some((source, path)) = specified_config_file.or(default_config_file) {
+        match Config::load_from_file(&path) {
             Ok(c) => opts.config.merge(c),
             Err(e) => {
                 bail!(
-                    "Cannot load configuration file `{}`: {e:?}",
-                    config_file.display()
+                    "Cannot load {source} configuration file `{}`: {e:?}",
+                    path.display()
                 );
-            }
-        }
-    } else {
-        // If no config file was explicitly provided, we try to load the default
-        // config file from the current directory if the file exits. This will
-        // raise an error if the file is invalid, just like the explicit provided
-        // config file.
-        let default_config = PathBuf::from(LYCHEE_CONFIG_FILE);
-        if default_config.is_file() {
-            match Config::load_from_file(&default_config) {
-                Ok(c) => opts.config.merge(c),
-                Err(e) => {
-                    bail!(
-                        "Cannot load default configuration file `{}`: {e:?}",
-                        default_config.display()
-                    );
-                }
             }
         }
     }

@@ -8,9 +8,10 @@ macro_rules! make_merger {
 
         $vis:vis enum $fields_enum:ident {
         $(
-            $field_variant:ident $( ( $field_ty:ty ) )?
+            $field_variant:ident
             =
             $field_name:ident
+            $( -> $field_ty:ty )?
             ,
         )*
         // https://internals.rust-lang.org/t/macro-metavariables-matching-an-empty-fragment/18678/3
@@ -76,25 +77,24 @@ macro_rules! make_merger {
                 field_is_defined: &dyn Fn($fields_enum) -> bool,
             ) -> $ty {
                 let mut base = base;
+
                 $(
-
-                let new = overrides.$field_name;
-
-                if field_is_defined($fields_enum::$field_variant) {
-
+                base.$field_name = if field_is_defined($fields_enum::$field_variant) {
                     $( if (true) {
-                        let args = (base.$field_name, new);
+                        let args = (base.$field_name, overrides.$field_name);
                         let joiner_args: ($field_ty, $field_ty) = args; // <-- (ignore this, look at other errors first!)
                         let x = (self.$field_name)(joiner_args.0, joiner_args.1);
                         let joiner_function_result: $field_ty = x;
-                        base.$field_name = joiner_function_result; // <-- type mismatch means an incorrect type was written in a `make_merger!` enum variant
+                        joiner_function_result // <-- type mismatch means an incorrect type was written in a `make_merger!` enum variant
                     } else )? {
-                        base.$field_name = new;
+                        overrides.$field_name
                     }
-
-                }
+                } else {
+                    base.$field_name
+                };
 
                 )*
+
                 base
             }
         }
@@ -120,9 +120,9 @@ make_merger! {
     pub(crate) struct ConfigMerger;
 
     pub(crate) enum ConfigField {
-        Header(Vec<(String, String)>) = header,
+        Header = header -> Vec<(String, String)>,
         GithubToken = github_token,
-        MaxConcurrency(usize) = max_concurrency,
+        MaxConcurrency = max_concurrency -> usize,
     }
 
 }
