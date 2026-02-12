@@ -989,6 +989,20 @@ impl Config {
         self.header = merged_map.into_iter().collect();
     }
 
+    pub(crate) fn merge_headers2(
+        self_items: &[(String, String)],
+        other: &[(String, String)],
+    ) -> Vec<(String, String)> {
+        let self_map = self_items.iter();
+        let other_map = other.iter();
+
+        // Merge the two maps, with `other` taking precedence
+        let merged_map: HashMap<_, _> = self_map.chain(other_map).cloned().collect();
+
+        // Convert the merged map back to a Vec of tuples
+        merged_map.into_iter().collect()
+    }
+
     /// Load configuration from a file
     pub(crate) fn load_from_file(path: &Path) -> Result<Config> {
         // Read configuration file

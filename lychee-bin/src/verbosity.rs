@@ -117,7 +117,7 @@ impl Serialize for Verbosity {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self.log_level().as_str())
+        self.log_level().as_str().serialize(serializer)
     }
 }
 
