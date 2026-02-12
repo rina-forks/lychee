@@ -83,7 +83,6 @@ mod client;
 mod commands;
 mod files_from;
 mod formatters;
-mod merger_macro;
 mod options;
 mod parse;
 mod progress;
