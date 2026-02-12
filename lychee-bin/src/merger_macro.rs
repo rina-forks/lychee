@@ -73,7 +73,7 @@ macro_rules! make_merger {
             ///
             /// If the merger was defined with a "join" function for a particular
             /// field, then that join function will be applied
-            $vis fn merge(
+            $vis fn merge_by_predicate(
                 &self,
                 base: $ty,
                 overrides: $ty,
@@ -97,6 +97,17 @@ macro_rules! make_merger {
 
                 )*
                 }
+            }
+
+            $vis fn merge_by_set(
+                &self,
+                base: $ty,
+                overrides: $ty,
+                defined_set: &HashSet<$fields_enum>
+            ) -> $ty {
+                println!("defined: {:?}", defined_set);
+                let is_defined = |x| defined_set.contains(&x);
+                self.merge_by_predicate(base, overrides, &is_defined)
             }
         }
 
@@ -217,12 +228,6 @@ pub(crate) fn clap_arg_to_field(x: &clap::Id) -> Option<ConfigField> {
         "quiet" => Some(ConfigField::Verbose),
         s => ConfigField::from_field_name(s).ok(),
     }
-}
-
-pub(crate) fn merge(x: Config, other: Config, defined_set: &HashSet<ConfigField>) -> Config {
-    println!("defined: {:?}", defined_set);
-    let is_defined = |x| defined_set.contains(&x);
-    ConfigMerger {}.merge(x, other, &is_defined)
 }
 
 #[cfg(test)]

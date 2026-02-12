@@ -167,7 +167,11 @@ fn load_config() -> Result<LycheeOptions> {
             }
         };
 
-        opts.config = crate::merger_macro::merge(toml_config, opts.config, &cli_defined);
+        opts.config = crate::merger_macro::ConfigMerger {}.merge_by_set(
+            toml_config,
+            opts.config,
+            &cli_defined,
+        );
     }
 
     if let Ok(lycheeignore) = File::open(LYCHEE_IGNORE_FILE) {
