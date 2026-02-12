@@ -137,7 +137,11 @@ Accept = accept,
 Archive = archive,
 Base = base,
 BaseUrl = base_url,
-BasicAuth = basic_auth,
+BasicAuth = basic_auth => |x, y| match (x, y) {
+    (Some(x), Some(y)) => Some(x.into_iter().chain(y.into_iter()).collect()),
+    (Some(x), None) | (None, Some(x)) => Some(x),
+    (None, None) => None
+},
 Cache = cache,
 CacheExcludeStatus = cache_exclude_status,
 CookieJar = cookie_jar,

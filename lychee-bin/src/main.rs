@@ -172,6 +172,7 @@ fn load_config() -> Result<LycheeOptions> {
             opts.config,
             &cli_defined,
         );
+        println!("{:?}", opts.config);
     }
 
     if let Ok(lycheeignore) = File::open(LYCHEE_IGNORE_FILE) {
