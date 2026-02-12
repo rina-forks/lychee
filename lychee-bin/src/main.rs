@@ -139,54 +139,35 @@ fn read_lines(file: &File) -> Result<Vec<String>> {
 /// This includes a potential config file, command-line- and environment variables
 fn load_config() -> Result<LycheeOptions> {
     let command = <LycheeOptions as clap::CommandFactory>::command();
-    let ids = command
-        .get_arguments()
-        .map(|arg| arg.get_id().as_str().to_string())
-        .collect::<Vec<_>>();
-    println!("{:?}", ids);
-    let mut matches = command.get_matches();
-    println!(
-        "{:?}",
-        ids.into_iter()
-            .map(|x| (x.clone(), matches.value_source(&x)))
-            .filter(|x| x.1 == Some(clap::parser::ValueSource::CommandLine))
-            .collect::<Vec<_>>()
-    );
 
-    let opts = <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches).unwrap();
-
-    let t = toml::Table::try_from(opts.config).unwrap();
-    println!("{}", t);
-
-    let mut opts = LycheeOptions {
-        raw_inputs: opts.raw_inputs,
-        config_file: opts.config_file,
-        config: t.try_into::<Config>().unwrap(),
-    };
+    let matches = command.get_matches();
+    let (mut opts, cli_toml) = Config::arg_matches_to_toml(matches)?;
 
     init_logging(&opts.config.verbose, &opts.config.mode);
 
-
+    // Load a potentially existing config file and merge it into the config from
+    // the CLI
     let specified_config_file = opts.config_file.take().map(|x| ("specified", x));
 
     // If no config file was explicitly provided, we try to load the default
     // config file from the current directory if the file exits. This will
     // raise an error if the file is invalid, just like the explicit provided
     // config file.
-    let default_config_file = Some(("default", PathBuf::from(LYCHEE_CONFIG_FILE))).filter(|x| x.1.exists());
+    let default_config_file =
+        Some(("default", PathBuf::from(LYCHEE_CONFIG_FILE))).filter(|x| x.1.exists());
 
-    // Load a potentially existing config file and merge it into the config from
-    // the CLI
     if let Some((source, path)) = specified_config_file.or(default_config_file) {
-        match Config::load_from_file(&path) {
-            Ok(c) => opts.config.merge(c),
+        let config_toml = match Config::toml_from_file(&path) {
+            Ok(c) => c,
             Err(e) => {
                 bail!(
                     "Cannot load {source} configuration file `{}`: {e:?}",
                     path.display()
                 );
             }
-        }
+        };
+
+        opts.config = Config::merge_tomls(config_toml, cli_toml).try_into()?;
     }
 
     if let Ok(lycheeignore) = File::open(LYCHEE_IGNORE_FILE) {

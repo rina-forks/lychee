@@ -4,7 +4,7 @@ use crate::parse::parse_base;
 use crate::verbosity::Verbosity;
 use anyhow::{Context, Error, Result, anyhow};
 use clap::builder::PossibleValuesParser;
-use clap::{Parser, builder::TypedValueParser};
+use clap::{ArgMatches, Parser, builder::TypedValueParser, parser::ValueSource};
 use const_format::{concatcp, formatcp};
 use http::{
     HeaderMap,
@@ -20,6 +20,7 @@ use lychee_lib::{
 use reqwest::tls;
 use secrecy::SecretString;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
+use serde_aux::serde_introspection::serde_introspect;
 use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -1010,6 +1011,68 @@ impl Config {
         toml::from_str(&contents).with_context(|| "Failed to parse configuration file")
     }
 
+    pub(crate) fn toml_from_file(path: &Path) -> Result<toml::Table> {
+        let contents = fs::read_to_string(path)?;
+        Ok(toml::Table::try_from(&contents)?)
+    }
+
+    pub(crate) fn clap_name_to_serde_name(clap_name: &str) -> Option<&str> {
+        match clap_name {
+            "quiet" => Some("verbose"),
+            "base" => Some("base_url"),
+
+            // these 3 struct fields are in LycheeOptions.
+            // serde fields are only those in Config.
+            "config" => None,
+            "config_file" => None,
+            "inputs" => None,
+
+            x => Some(x),
+        }
+    }
+
+    pub(crate) fn arg_matches_to_toml(matches: ArgMatches) -> Result<(LycheeOptions, toml::Table)> {
+        let command = <LycheeOptions as clap::CommandFactory>::command();
+
+        let mut matches = matches;
+        let lychee_options =
+            <LycheeOptions as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)?;
+
+        let clap_names = command
+            .get_arguments()
+            .map(|arg| arg.get_id())
+            .collect::<Vec<_>>();
+
+        println!(
+        "{:?}",
+            clap_names
+                .iter()
+                .map(|x| (x.as_str(), matches.value_source(x.as_str())))
+                .collect::<Vec<_>>()
+        );
+
+        let defaulted_clap_names = clap_names
+            .into_iter()
+            .filter(|id| matches.value_source(id.as_str()) != Some(ValueSource::CommandLine));
+
+        let mut toml = toml::Table::try_from(lychee_options.config.clone())?;
+
+        for defaulted_name in defaulted_clap_names {
+            toml.remove(defaulted_name.as_str());
+        }
+
+        Ok((lychee_options, toml))
+    }
+
+    pub(crate) fn merge_tomls(base: toml::Table, overrides: toml::Table) -> toml::Table {
+        let mut base = base;
+        // TODO: custom mergers for certain fields
+        for (k, v) in overrides {
+            base.insert(k, v);
+        }
+        base
+    }
+
     /// Merge the configuration from TOML into the CLI configuration
     pub(crate) fn merge(&mut self, toml: Config) {
         // Special handling for headers before fold_in!
@@ -1105,6 +1168,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::collections::HashMap;
 
     use super::*;
@@ -1207,6 +1271,70 @@ mod tests {
                 ("Accept".to_string(), "text/html".to_string()),
                 ("X-Test".to_string(), "check=this".to_string()),
             ]
+        );
+    }
+
+    #[test]
+    fn test_clap_name_to_serde_name() {
+        // NOTE: update these two variables when new Config fields are added.
+        // also check and update Config::clap_name_to_serde_name if needed.
+        #[rustfmt::skip]
+        let serde_known_fields = BTreeSet::from([
+            "accept", "archive", "base_url", "basic_auth", "cache", "cache_exclude_status",
+            "cookie_jar", "default_extension", "dump", "dump_inputs", "exclude",
+            "exclude_all_private", "exclude_file", "exclude_link_local", "exclude_loopback",
+            "exclude_path", "exclude_private", "extensions", "fallback_extensions", "files_from",
+            "format", "generate", "github_token", "glob_ignore_case", "header", "hidden", "hosts",
+            "host_concurrency", "host_request_interval", "host_stats", "include",
+            "include_fragments", "include_mail", "include_verbatim", "include_wikilinks",
+            "index_files", "insecure", "max_cache_age", "max_concurrency", "max_redirects",
+            "max_retries", "method", "min_tls", "mode", "no_ignore", "no_progress", "offline",
+            "output", "preprocess", "remap", "require_https", "retry_wait_time", "root_dir",
+            "scheme", "skip_missing", "suggest", "threads", "timeout", "user_agent", "verbose",
+        ]);
+        // serde fields with no corresponding clap argument
+        let serde_only_fields = BTreeSet::from(["hosts"]);
+
+        let command = <LycheeOptions as clap::CommandFactory>::command();
+        let clap_names = command
+            .get_arguments()
+            .map(|arg| arg.get_id().as_str())
+            .filter_map(Config::clap_name_to_serde_name)
+            .collect::<BTreeSet<_>>();
+
+        let serde_names = serde_introspect::<Config>()
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            serde_known_fields, serde_names,
+            "serde names in Config struct have changed! \
+                please update serde_known_fields and review any consequences",
+        );
+
+        assert!(
+            serde_only_fields.is_subset(&serde_names),
+            "serde_only_fields has fields not in serde_names!\n{:?}",
+            serde_only_fields
+                .difference(&serde_names)
+                .collect::<BTreeSet<_>>()
+        );
+        let serde_names = serde_names
+            .difference(&serde_only_fields)
+            .copied()
+            .collect::<BTreeSet<_>>();
+
+        assert!(
+            clap_names == serde_names,
+            "clap names and serde names differ!!\n \
+                names only in serde: {:?}\n \
+                names only in clap: {:?}\n
+                both: {:?}\n",
+            serde_names.difference(&clap_names).collect::<BTreeSet<_>>(),
+            clap_names.difference(&serde_names).collect::<BTreeSet<_>>(),
+            clap_names
+                .intersection(&serde_names)
+                .collect::<BTreeSet<_>>(),
         );
     }
 }
