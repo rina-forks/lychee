@@ -238,10 +238,10 @@ mod tests {
     #[test]
     fn test_toml_name() {
         for x in all_toml_names() {
-            toml_name_to_field(x).unwrap()
+            toml_name_to_field(x).unwrap();
         }
         for x in all_clap_args() {
-            clap_arg_to_field(x).unwrap()
+            clap_arg_to_field(&x).unwrap();
         }
     }
 }
