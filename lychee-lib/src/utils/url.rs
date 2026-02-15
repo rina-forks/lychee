@@ -149,14 +149,14 @@ impl ReqwestUrlExt for Url {
         let self_query_has_precedence = base.query() == None || self.query() != None;
 
         if always_emit_filename_segment {
-            remaining.push(self_filename.as_ref());
+            remaining.push(self_filename);
         } else if needs_filename {
             remaining.push(if path_changed && self_filename == "." {
                 "" // a trailing slash can represent a "." filename.
             } else if !path_changed && self_filename == base_filename && self_query_has_precedence {
                 "" // in this case, we can re-use the filename of the base URL.
             } else {
-                self_filename.as_ref()
+                self_filename
             })
         }
 
@@ -169,7 +169,8 @@ impl ReqwestUrlExt for Url {
 
         // using "./" is equivalent and makes sure the relative link
         // is not interpreted as a root-relative or scheme-relative link.
-        if let Some([first, _]) = remaining.get_mut(..=1)
+        if let Some(first) = remaining.get_mut(0)
+            && path_changed
             && *first == ""
         {
             *first = "./";
