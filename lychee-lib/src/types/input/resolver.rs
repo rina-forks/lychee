@@ -9,8 +9,8 @@ use crate::Result;
 use crate::filter::PathExcludes;
 use crate::types::file::FileExtensions;
 use async_stream::try_stream;
+use futures::StreamExt;
 use futures::stream::Stream;
-use futures::stream::once;
 use glob::glob_with;
 use ignore::{Walk, WalkBuilder};
 use shellexpand::tilde;
@@ -57,7 +57,7 @@ impl InputResolver {
         skip_hidden: bool,
         skip_ignored: bool,
         excluded_paths: &'a PathExcludes,
-    ) -> Pin<Box<dyn Stream<Item = Result<ResolvedInputSource>> + Send + 'a>> {
+    ) -> impl Stream<Item = Result<ResolvedInputSource>> + 'a {
         Self::resolve_input(
             input,
             file_extensions,
@@ -103,11 +103,11 @@ impl InputResolver {
         skip_hidden: bool,
         skip_ignored: bool,
         excluded_paths: &'a PathExcludes,
-    ) -> Pin<Box<dyn Stream<Item = Result<ResolvedInputSource>> + Send + 'a>> {
+    ) -> impl Stream<Item = Result<ResolvedInputSource>> + 'a {
         match &input.source {
             InputSource::RemoteUrl(url) => {
                 let url = url.clone();
-                Box::pin(once(async move { Ok(ResolvedInputSource::RemoteUrl(url)) }))
+                futures::stream::iter(vec![Ok(ResolvedInputSource::RemoteUrl(url))]).left_stream()
             }
             InputSource::FsGlob {
                 pattern,
@@ -119,45 +119,44 @@ impl InputResolver {
                 let mut match_opts = glob::MatchOptions::new();
                 match_opts.case_sensitive = !ignore_case;
 
-                Box::pin(try_stream! {
-                    // For glob patterns, we expand the pattern and yield
-                    // matching paths as ResolvedInputSource::FsPath items.
-                    for entry in glob_with(&glob_expanded, match_opts)? {
-                        match entry {
-                            Ok(path) => {
-                                // Skip directories or files that don't match
-                                // extensions
-                                if path.is_dir() {
-                                    continue;
-                                }
-                                if Self::is_excluded_path(&path, excluded_paths) {
-                                    continue;
-                                }
+                let globbed = match glob_with(&glob_expanded, match_opts) {
+                    Ok(x) => x,
+                    Err(e) => return futures::stream::iter(vec![Err(e)]).left_stream(),
+                };
 
-                                // We do not filter by extensions here.
-                                //
-                                // Instead, we always check files captured by
-                                // the glob pattern, as the user explicitly
-                                // specified them.
-                                yield ResolvedInputSource::FsPath(path);
-                            }
+                // For glob patterns, we expand the pattern and yield
+                // matching paths as ResolvedInputSource::FsPath items.
+                futures::stream::iter(
+                    globbed
+                        .filter_map(|x| match x {
+                            Ok(path) => Some(path),
                             Err(e) => {
                                 eprintln!("Error in glob pattern: {e:?}");
+                                None
                             }
-                        }
-                    }
-                })
+                        })
+                        // Skip directories or files that don't match
+                        // extensions
+                        .filter(|path| path.is_file())
+                        .filter(|path| !Self::is_excluded_path(&path, excluded_paths))
+                        // We do not filter by extensions here.
+                        //
+                        // Instead, we always check files captured by
+                        // the glob pattern, as the user explicitly
+                        // specified them.
+                        .map(ResolvedInputSource::FsPath),
+                )
+                .left_stream()
+                .right_stream()
             }
             InputSource::FsPath(path) => {
                 if path.is_dir() {
                     let walk = match Self::walk(path, file_extensions, skip_hidden, skip_ignored) {
                         Ok(x) => x,
-                        Err(e) => {
-                            return Box::pin(once(async move { Err(e) }));
-                        }
+                        Err(e) => return futures::stream::iter(vec![Err(e)]).left_stream(),
                     };
 
-                    Box::pin(try_stream! {
+                    try_stream! {
                         for entry in walk {
                             let entry = entry?;
                             if Self::is_excluded_path(entry.path(), excluded_paths)
@@ -178,7 +177,9 @@ impl InputResolver {
                                 entry.path().to_path_buf()
                             );
                         }
-                    })
+                    }
+                    .right_stream()
+                    .right_stream()
                 } else {
                     // For individual files, yield if not excluded.
                     //
@@ -190,17 +191,20 @@ impl InputResolver {
                     // the user explicitly specified the file, so they
                     // expect it to be checked.
                     if Self::is_excluded_path(path, excluded_paths) {
-                        Box::pin(futures::stream::empty())
+                        futures::stream::iter(vec![]).left_stream()
                     } else {
                         let path = path.clone();
-                        Box::pin(once(async move { Ok(ResolvedInputSource::FsPath(path)) }))
+                        futures::stream::iter(vec![Ok(ResolvedInputSource::FsPath(path))])
+                            .left_stream()
                     }
                 }
             }
-            InputSource::Stdin => Box::pin(once(async move { Ok(ResolvedInputSource::Stdin) })),
+            InputSource::Stdin => {
+                futures::stream::iter(vec![Ok(ResolvedInputSource::Stdin)]).left_stream()
+            }
             InputSource::String(s) => {
                 let s = s.clone();
-                Box::pin(once(async move { Ok(ResolvedInputSource::String(s)) }))
+                futures::stream::iter(vec![Ok(ResolvedInputSource::String(s))]).left_stream()
             }
         }
     }
