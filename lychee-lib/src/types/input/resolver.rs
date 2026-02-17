@@ -119,33 +119,34 @@ impl InputResolver {
                 let mut match_opts = glob::MatchOptions::new();
                 match_opts.case_sensitive = !ignore_case;
 
-                let globbed = match glob_with(&glob_expanded, match_opts) {
-                    Ok(x) => x,
-                    Err(e) => return futures::stream::iter(vec![Err(e)]).left_stream(),
-                };
+                try_stream! {
+                    // For glob patterns, we expand the pattern and yield
+                    // matching paths as ResolvedInputSource::FsPath items.
+                    for entry in glob_with(&glob_expanded, match_opts)? {
+                        match entry {
+                            Ok(path) => {
+                                // Skip directories or files that don't match
+                                // extensions
+                                if path.is_dir() {
+                                    continue;
+                                }
+                                if Self::is_excluded_path(&path, excluded_paths) {
+                                    continue;
+                                }
 
-                // For glob patterns, we expand the pattern and yield
-                // matching paths as ResolvedInputSource::FsPath items.
-                futures::stream::iter(
-                    globbed
-                        .filter_map(|x| match x {
-                            Ok(path) => Some(path),
+                                // We do not filter by extensions here.
+                                //
+                                // Instead, we always check files captured by
+                                // the glob pattern, as the user explicitly
+                                // specified them.
+                                yield ResolvedInputSource::FsPath(path);
+                            }
                             Err(e) => {
                                 eprintln!("Error in glob pattern: {e:?}");
-                                None
                             }
-                        })
-                        // Skip directories or files that don't match
-                        // extensions
-                        .filter(|path| path.is_file())
-                        .filter(|path| !Self::is_excluded_path(&path, excluded_paths))
-                        // We do not filter by extensions here.
-                        //
-                        // Instead, we always check files captured by
-                        // the glob pattern, as the user explicitly
-                        // specified them.
-                        .map(ResolvedInputSource::FsPath),
-                )
+                        }
+                    }
+                }
                 .left_stream()
                 .right_stream()
             }
