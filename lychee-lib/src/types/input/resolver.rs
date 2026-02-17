@@ -6,14 +6,18 @@
 use super::input::Input;
 use super::source::{InputSource, ResolvedInputSource};
 use crate::Result;
+use crate::ErrorKind;
 use crate::filter::PathExcludes;
 use crate::types::file::FileExtensions;
 use async_stream::try_stream;
 use futures::StreamExt;
+use futures::TryStreamExt;
 use futures::stream::Stream;
 use glob::glob_with;
 use ignore::{Walk, WalkBuilder};
 use shellexpand::tilde;
+use std::ops::Deref;
+use std::ops::DerefMut;
 use std::path::Path;
 use std::pin::Pin;
 
@@ -115,14 +119,17 @@ impl InputResolver {
             } => {
                 // NOTE: we convert the glob::Pattern back to str because
                 // `glob_with` only takes string arguments.
-                let glob_expanded = tilde(pattern.as_str()).to_string();
+                let glob_expanded = Box::pin(tilde(pattern.as_str()).to_string());
                 let mut match_opts = glob::MatchOptions::new();
                 match_opts.case_sensitive = !ignore_case;
+                let match_opts = Box::pin(match_opts);
+
+                let excluded_paths = Pin::new(excluded_paths);
 
                 try_stream! {
                     // For glob patterns, we expand the pattern and yield
                     // matching paths as ResolvedInputSource::FsPath items.
-                    for entry in glob_with(&glob_expanded, match_opts)? {
+                    for entry in glob_with(&glob_expanded, *match_opts).map_err(ErrorKind::from)? {
                         match entry {
                             Ok(path) => {
                                 // Skip directories or files that don't match
@@ -130,7 +137,7 @@ impl InputResolver {
                                 if path.is_dir() {
                                     continue;
                                 }
-                                if Self::is_excluded_path(&path, excluded_paths) {
+                                if Self::is_excluded_path(&path, &excluded_paths) {
                                     continue;
                                 }
 
@@ -157,28 +164,16 @@ impl InputResolver {
                         Err(e) => return futures::stream::iter(vec![Err(e)]).left_stream(),
                     };
 
-                    try_stream! {
-                        for entry in walk {
-                            let entry = entry?;
-                            if Self::is_excluded_path(entry.path(), excluded_paths)
-                            {
-                                continue;
-                            }
-
-                            match entry.file_type() {
-                                None => continue,
-                                Some(file_type) => {
-                                    if !file_type.is_file() {
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            yield ResolvedInputSource::FsPath(
-                                entry.path().to_path_buf()
-                            );
-                        }
-                    }
+                    futures::stream::iter({vec![]
+                        // walk.filter_map(|entry| {
+                        // match entry {
+                        //     Err(e) => Some(Err(e)),
+                        //     Ok(entry) => (!Self::is_excluded_path(entry.path(), excluded_paths)
+                        //         && entry.file_type().is_some_and(|x| x.is_file()))
+                        //     .then(|| Ok(ResolvedInputSource::FsPath(entry.path().to_path_buf()))),
+                        // }
+                    })
+                    // .map_err(|x| ErrorKind::from(x))
                     .right_stream()
                     .right_stream()
                 } else {
