@@ -559,7 +559,7 @@ impl Client {
 
     /// Check a single file using the file checker.
     pub async fn check_file(&self, uri: &Uri) -> Status {
-        self.file_checker.check(uri).await
+        self.file_checker.check(uri).await.0
     }
 
     /// Remap `uri` using the client-defined remapping rules.

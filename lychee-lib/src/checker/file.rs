@@ -1,3 +1,4 @@
+use futures::FutureExt;
 use http::StatusCode;
 use log::warn;
 use std::borrow::Cow;
@@ -91,17 +92,22 @@ impl FileChecker {
     /// # Returns
     ///
     /// Returns a `Status` indicating the result of the check.
-    pub(crate) async fn check(&self, uri: &Uri) -> Status {
+    pub(crate) async fn check(&self, uri: &Uri) -> (Status, impl Future<Output = Result<String>>) {
+        let err = || ErrorKind::InvalidFilePath(uri.clone());
+        let err_future = async move { Err(err()) };
         let Ok(path) = uri.url.to_file_path() else {
-            return ErrorKind::InvalidFilePath(uri.clone()).into();
+            return (err().into(), err_future);
         };
 
         let path = self.resolve_base(&path);
         let path = self.resolve_local_path(&path, uri);
-        match path {
+        let status = match path {
             Ok(path) => self.check_file(path.as_ref(), uri).await,
-            Err(err) => err.into(),
-        }
+            Err(err) => {
+                return (err.into(), err_future);
+            }
+        };
+        (status, err_future)
     }
 
     /// Resolves the given path using the base path, if one is set.
