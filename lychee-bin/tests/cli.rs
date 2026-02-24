@@ -458,12 +458,49 @@ mod cli {
             .arg("/resolve_paths")
             .arg("--base-url")
             .arg(&dir)
-            .arg(dir.join("resolve_paths").join("index.html"))
+            .arg(dir.join("resolve_paths").join("index2.html"))
             .env_clear()
             .assert()
             .success()
-            .stdout(contains("3 Total"))
-            .stdout(contains("3 OK"));
+            .stdout(contains("5 Total"))
+            .stdout(contains("5 OK"));
+    }
+
+    #[test]
+    fn test_resolve_paths_from_root_dir_and_local_base_url() {
+        let dir = fixtures_path!();
+
+        cargo_bin_cmd!()
+            .arg("--dump")
+            .arg("--root-dir")
+            .arg("/root")
+            .arg("--base-url")
+            .arg("/base/")
+            .arg(dir.join("resolve_paths").join("index2.html"))
+            .env_clear()
+            .assert()
+            .success()
+            .stdout(contains("file:///base/root"))
+            .stdout(contains("file:///base/root/about"))
+            .stdout(contains("file:///base/resolve_paths/index.html"))
+            .stdout(contains("file:///base/root/another%20page#y"))
+            .stdout(contains("file:///base/resolve_paths/same%20folder.html#x"));
+    }
+
+    #[test]
+    fn test_root_relative_with_remote_base_url_and_root_dir() {
+        // When both are set and base-url is remote, root-relative links
+        // should resolve against the remote base, not the local root-dir.
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--dump")
+            .arg("--base-url=https://example.com/docs/")
+            .arg("--root-dir=/tmp")
+            .arg("--default-extension=md")
+            .write_stdin("[a](/page)")
+            .assert()
+            .success()
+            .stdout(contains("https://example.com/page"));
     }
 
     #[test]
@@ -933,7 +970,7 @@ mod cli {
             .arg(".")
             .assert()
             .failure()
-            .stderr(contains("Cannot load default configuration file"));
+            .stderr(contains("Cannot load configuration file"));
     }
 
     #[tokio::test]
@@ -1005,6 +1042,69 @@ mod cli {
     }
 
     #[tokio::test]
+    async fn test_configs_precedence() {
+        let path = fixtures_path!().join("configs");
+
+        cargo_bin_cmd!()
+            .current_dir(&path)
+            .arg(".")
+            .arg("--config")
+            .arg("precedence-compact.toml")
+            .arg("--config")
+            .arg("precedence-json.toml") // later config takes precedence
+            .assert()
+            .success()
+            .stdout(contains(r#""total": 1,"#))
+            .stdout(contains("1 Total").not());
+
+        cargo_bin_cmd!()
+            .current_dir(path)
+            .arg(".")
+            .arg("--config")
+            .arg("precedence-json.toml")
+            .arg("--config")
+            .arg("precedence-compact.toml") // later config takes precedence
+            .assert()
+            .success()
+            .stdout(contains("1 Total"))
+            .stdout(contains(r#""total": 1,"#).not());
+    }
+
+    #[tokio::test]
+    async fn test_cli_option_precedence() {
+        let path = fixtures_path!().join("configs");
+
+        cargo_bin_cmd!()
+            .current_dir(&path)
+            .arg(".")
+            // the CLI args always have precedence over config files
+            .arg("--format")
+            .arg("json")
+            .arg("--config")
+            .arg("precedence-compact.toml")
+            .assert()
+            .success()
+            .stdout(contains(r#""total": 1,"#))
+            .stdout(contains("1 Total").not());
+    }
+
+    #[tokio::test]
+    async fn test_config_merging() {
+        let path = fixtures_path!().join("configs");
+        cargo_bin_cmd!()
+            .current_dir(&path)
+            .write_stdin("https://a.dev https://b.dev")
+            .arg("-")
+            .arg("--config")
+            .arg("exclude-a.toml")
+            .arg("--config")
+            .arg("exclude-b.toml")
+            .assert()
+            .success()
+            .stdout(contains("2 Excluded"));
+    }
+
+    #[tokio::test]
     async fn test_config_invalid_keys() {
         let mock_server = mock_server!(StatusCode::OK);
         let config = fixtures_path!().join("configs").join("invalid-key.toml");
@@ -1035,13 +1135,12 @@ mod cli {
 
     #[tokio::test]
     async fn test_config_example() {
-        let mock_server = mock_server!(StatusCode::OK);
         let config = root_path!().join("lychee.example.toml");
         cargo_bin_cmd!()
+            .current_dir(root_path!())
             .arg("--config")
             .arg(config)
             .arg("-")
-            .write_stdin(mock_server.uri())
             .env_clear()
             .assert()
             .success();
@@ -3343,5 +3442,136 @@ The config file should contain every possible key for documentation purposes."
             .assert()
             .success()
             .stdout(contains("https://example.com"));
+    }
+
+    #[test]
+    fn test_local_base_url_bug_1896() -> Result<()> {
+        // https://github.com/lycheeverse/lychee/issues/1896
+        let dir = tempdir()?;
+
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--dump")
+            .arg("--base-url")
+            .arg(dir.path())
+            .arg("--default-extension")
+            .arg("md")
+            .write_stdin("[a](b.html#a)")
+            .assert()
+            .success()
+            .stdout(contains("b.html#a"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_relative_url_parse_errors() -> Result<()> {
+        let dir = tempdir()?;
+
+        // without root-dir, fails to resolve in all cases
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--default-extension=md")
+            .write_stdin("[a](a)")
+            .assert()
+            .failure()
+            .stdout(contains("Cannot parse 'a' into a URL: relative URL without a base: This relative link was found inside an input source that has no base location"));
+
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--default-extension=md")
+            .write_stdin("[a](/a)")
+            .assert()
+            .failure()
+            .stdout(contains("Cannot resolve root-relative link '/a': To resolve root-relative links in local files, provide a root dir"));
+
+        // with root-dir, locally-relative links can still fail because
+        // there is no current base URL
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--root-dir")
+            .arg(dir.path())
+            .arg("--default-extension=md")
+            .write_stdin("[a](a)")
+            .assert()
+            .failure()
+            .stdout(contains("Cannot parse 'a' into a URL: relative URL without a base: This relative link was found inside an input source that has no base location"));
+
+        // with root-dir, root-relative links should succeed
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--root-dir")
+            .arg(dir.path())
+            .arg("--default-extension=md")
+            .write_stdin("[a](/)")
+            .assert()
+            .success();
+
+        // with an explicit base-url, root-relative and locally-relative links work. yay!
+        // both should become relative to the base-url.
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("-vv")
+            .arg("--base-url=https://lychee.cli.rs/")
+            .arg("--default-extension=md")
+            .write_stdin("[a](/)")
+            .assert()
+            .success()
+            .stderr(contains("https://lychee.cli.rs/"));
+
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("-vv")
+            .arg("--base-url=https://lychee.cli.rs/")
+            .arg("--default-extension=md")
+            .write_stdin("[a](.)")
+            .assert()
+            .success()
+            .stderr(contains("https://lychee.cli.rs/"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_base_url_applies_to_local() {
+        cargo_bin_cmd!()
+            .arg("--base-url=https://lychee.cli.rs/")
+            .arg(fixtures_path!().join("resolve_paths/index.html"))
+            .assert()
+            .failure()
+            .stdout(contains("https://lychee.cli.rs/another%20page"));
+    }
+
+    /// URLs should NOT be downloaded fully, unless fragment checking is on and the link has a fragment.
+    #[test]
+    fn test_large_file_lazy_download() {
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--include-fragments")
+            .arg("--timeout=5")
+            .write_stdin(
+                "
+https://proof.ovh.net/files/10Gb.dat
+https://proof.ovh.net/files/1Gb.dat
+https://proof.ovh.net/files/1Mb.dat
+https://lychee.cli.rs/guides/cli/#options
+            ",
+            )
+            .assert()
+            .success();
+
+        cargo_bin_cmd!()
+            .arg("-")
+            .arg("--timeout=5")
+            .write_stdin(
+                "
+https://proof.ovh.net/files/10Gb.dat#fragments-ignored
+https://proof.ovh.net/files/1Gb.dat#fragments-ignored
+https://proof.ovh.net/files/1Mb.dat#fragments-ignored
+https://lychee.cli.rs/guides/cli/#fragments-ignored
+            ",
+            )
+            .assert()
+            .success();
     }
 }

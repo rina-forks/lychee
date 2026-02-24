@@ -28,7 +28,7 @@ use secrecy::{ExposeSecret, SecretString};
 use typed_builder::TypedBuilder;
 
 use crate::{
-    Base, BasicAuthCredentials, ErrorKind, Request, Response, Result, Status, Uri,
+    BaseInfo, BasicAuthCredentials, ErrorKind, Request, Response, Result, Status, Uri,
     chain::RequestChain,
     checker::{file::FileChecker, mail::MailChecker, website::WebsiteChecker},
     filter::Filter,
@@ -42,9 +42,9 @@ pub const DEFAULT_MAX_REDIRECTS: usize = 5;
 /// Default number of retries before a request is deemed as failed, 3.
 pub const DEFAULT_MAX_RETRIES: u64 = 3;
 /// Default wait time in seconds between retries, 1.
-pub const DEFAULT_RETRY_WAIT_TIME_SECS: usize = 1;
+pub const DEFAULT_RETRY_WAIT_TIME_SECS: u64 = 1;
 /// Default timeout in seconds before a request is deemed as failed, 20.
-pub const DEFAULT_TIMEOUT_SECS: usize = 20;
+pub const DEFAULT_TIMEOUT_SECS: u64 = 20;
 /// Default user agent, `lychee-<PKG_VERSION>`.
 pub const DEFAULT_USER_AGENT: &str = concat!("lychee/", env!("CARGO_PKG_VERSION"));
 
@@ -268,7 +268,7 @@ pub struct ClientBuilder {
     ///
     /// E.g. if the base is `/home/user/` and the path is `file.txt`, the
     /// resolved path would be `/home/user/file.txt`.
-    base: Option<Base>,
+    base: BaseInfo,
 
     /// Initial time between retries of failed requests.
     ///
@@ -398,7 +398,7 @@ impl ClientBuilder {
             email_checker: MailChecker::new(self.timeout),
             website_checker,
             file_checker: FileChecker::new(
-                self.base,
+                &self.base,
                 self.fallback_extensions,
                 self.index_files,
                 self.include_fragments,
