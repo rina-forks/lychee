@@ -547,8 +547,8 @@ impl Client {
             return Ok(Response::new(uri.clone(), Status::Excluded, source.into()));
         }
 
-        let status = match uri.scheme() {
-            _ if uri.is_tel() => Status::Excluded, // We don't check tel: URIs
+        let (status, body) = match uri.scheme() {
+            _ if uri.is_tel() => (Status::Excluded, None), // We don't check tel: URIs
             _ if uri.is_file() => self.check_file(uri).await,
             _ if uri.is_mail() => self.check_mail(uri).await,
             _ => self.check_website(uri, credentials).await?,
