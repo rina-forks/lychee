@@ -86,21 +86,26 @@ impl FileChecker {
     /// # Returns
     ///
     /// Returns a `Status` indicating the result of the check.
-    pub(crate) async fn check(&self, uri: &Uri) -> (Status, impl Future<Output = Result<String>>) {
+    pub(crate) fn check(&self, uri: &Uri) -> (Status, impl Future<Output = Result<String>> + 'static) {
         let err = || ErrorKind::InvalidFilePath(uri.clone());
         let err_future = async move { Err(err()) };
+
         let Ok(path) = uri.url.to_file_path() else {
-            return (err().into(), err_future);
+            return (err().into(), err_future.left_future());
         };
 
         let path = self.resolve_local_path(&path, uri);
-        let status = match path {
-            Ok(path) => self.check_file(path.as_ref(), uri).await,
-            Err(err) => {
-                return (err.into(), err_future);
-            }
-        };
-        (status, err_future)
+        match path {
+            Ok(path) => (
+                Status::Ok(StatusCode::OK),
+                {
+                    let path = path.into_owned();
+                    async move { Ok(tokio::fs::read_to_string(path).await?) }
+                }
+                .right_future(),
+            ),
+            Err(err) => (err.into(), err_future.left_future()),
+        }
     }
 
     /// Resolves the given local path by applying logic which is specific to local file

@@ -14,12 +14,14 @@
     clippy::used_underscore_binding
 )]
 use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::pin::Pin;
 
 use http::{
     StatusCode,
     header::{HeaderMap, HeaderValue},
 };
 use log::debug;
+use futures::FutureExt;
 use octocrab::Octocrab;
 use regex::RegexSet;
 use reqwest::{header, redirect, tls};
@@ -558,8 +560,9 @@ impl Client {
     }
 
     /// Check a single file using the file checker.
-    pub async fn check_file(&self, uri: &Uri) -> Status {
-        self.file_checker.check(uri).await.0
+    pub async fn check_file(&self, uri: &Uri) -> (Status, Option<Pin<Box<dyn Future<Output = Result<String>> + 'static>>>) {
+        let (status, fut) = self.file_checker.check(uri);
+        (status, Some(fut.boxed()))
     }
 
     /// Remap `uri` using the client-defined remapping rules.
@@ -598,8 +601,8 @@ impl Client {
     }
 
     /// Checks a `mailto` URI.
-    pub async fn check_mail(&self, uri: &Uri) -> Status {
-        self.email_checker.check_mail(uri).await
+    pub async fn check_mail<T>(&self, uri: &Uri) -> (Status, Option<T>) {
+        (self.email_checker.check_mail(uri).await, None)
     }
 }
 
