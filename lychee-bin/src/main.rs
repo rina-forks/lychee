@@ -119,8 +119,8 @@ fn main() -> Result<()> {
     // therefore we wrap the main code in another function to ensure that.
     // See: https://doc.rust-lang.org/stable/std/process/fn.exit.html
     // Also see: https://www.youtube.com/watch?v=zQC8T71Y8e4
-    let exit_code = run_main()?;
-    std::process::exit(exit_code);
+    f();
+    std::process::exit(0);
 }
 
 /// Read lines from file; ignore empty lines
@@ -427,4 +427,57 @@ fn redirect_warning(stats: &ResponseStats, config: &Config) {
             "lychee detected {redirects} {noun}. You might want to consider replacing redirecting URLs with the resolved URLs. Run lychee in verbose mode (-v/--verbose) to see details about the redirections.",
         );
     }
+}
+
+use std::ops::Deref;
+struct MappingRef<T, F = fn(&T) -> &T>(T, F);
+
+struct Ref<'a, T: 'a>(T);
+
+impl<T> MappingRef<T> {
+    fn new(x: T) -> MappingRef<T, fn(&T) -> &T> {
+        MappingRef(x, |x| x)
+    }
+}
+
+impl<T, F> MappingRef<T, F> {
+    fn compose<U: 'static, G, V>(f: F, g: G) -> impl Fn(&T) -> &V where
+
+        F: Fn(&T) -> &U,
+        G: Fn(&U) -> &V, {
+        move |x| g(f(x))
+    }
+
+    fn map<U, G, V>(this: Self, g: G) -> MappingRef<T, impl for<'a> Fn(&'a T) -> &'a V>
+    where
+        F: for<'a> Fn(&'a T) -> Ref<'a, U>,
+        G: for<'a> Fn(Ref<'a, U>) -> &'a V,
+    {
+        let f = this.1;
+        MappingRef(this.0, Self::compose(f, g))
+    }
+
+    // fn map2<U, G, V>(this: Self, g: G) -> MappingRef<T, impl Fn(&T) -> &V>
+    // where
+    //     F: forFn(&T) -> U,
+    //     G: Fn(U) -> &V,
+    // {
+    //     let f = this.1;
+    //     MappingRef(this.0, Self::compose(f, g))
+    // }
+
+    fn get<'a, U: 'a>(&'a self) -> U
+    where F: Fn(&'a T) -> U
+    {
+         (self.1)(&self.0)
+    }
+}
+
+fn f() {
+    let x = vec!["a".to_string()];
+    let a = MappingRef::map(MappingRef::new(x), |x| x.get(0));
+
+    let s:String = a.get();
+    println!("{}", s);
+
 }
