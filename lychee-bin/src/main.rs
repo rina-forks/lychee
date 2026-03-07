@@ -473,14 +473,23 @@ impl<T> Mref<T> {
 }
 
 impl<'a, T, F> Mref<T, F>
-    where
-        Mref<T, F>: RefChain<'a>,
-        <Mref<T, F> as RefChain<'a>>::Output: 'a
+where
+    T: RefChain<'a>,
+    Mref<T, F>: RefChain<'a>,
 {
-    fn refmap<V: 'a, G: Fn(<Mref<T, F> as RefChain<'a>>::Output) -> V>(self, f: G) -> Mref<Self, G>
-    {
+    fn refmap<V: 'a, G: Fn(<Mref<T, F> as RefChain<'a>>::Output) -> V>(
+        self,
+        f: G,
+    ) -> Mref<Self, G> {
         Mref(self, f)
     }
+
+    // fn boxed<U>(
+    //     self,
+    // ) -> Mref<Box<dyn RefChain<'a>>, F>
+    // {
+    //     Mref(Box::new(self.0), self.1)
+    // }
 }
 
 impl<T> Mbase<T> {
@@ -491,73 +500,19 @@ impl<T> Mbase<T> {
         Mref(self, f)
     }
 }
-
-// impl<T, F, U> Deref for Mref<T, F>
-//     where F: Fn(&T) -> &U,
-// {
-//     type Target = U;
-//     fn deref(&self) -> &Self::Target {
-//         (self.1)(&self.0)
-//     }
-// }
-
-// impl<T, U, F: Fn(&T) -> U> From<&Mref<T, F>> for U
-// {
-//     fn from(self) -> U {
-//         (self.1)(&self.0)
-//     }
-// }
-
-// struct Ref<'a, T: 'a>(T);
-//
-// impl<T> MappingRef<T> {
-//     fn new(x: T) -> MappingRef<T, fn(&T) -> &T> {
-//         MappingRef(x, |x| x)
-//     }
-// }
-//
-// impl<T, F> MappingRef<T, F> {
-//     fn compose<U: 'static, G, V>(f: F, g: G) -> impl Fn(&T) -> &V where
-//
-//         F: Fn(&T) -> &U,
-//         G: Fn(&U) -> &V, {
-//         move |x| g(f(x))
-//     }
-//
-//     fn map<U, G, V>(this: Self, g: G) -> MappingRef<T, impl for<'a> Fn(&'a T) -> &'a V>
-//     where
-//         F: for<'a> Fn(&'a T) -> Ref<'a, U>,
-//         G: for<'a> Fn(Ref<'a, U>) -> &'a V,
-//     {
-//         let f = this.1;
-//         MappingRef(this.0, Self::compose(f, g))
-//     }
-//
-//     // fn map2<U, G, V>(this: Self, g: G) -> MappingRef<T, impl Fn(&T) -> &V>
-//     // where
-//     //     F: forFn(&T) -> U,
-//     //     G: Fn(U) -> &V,
-//     // {
-//     //     let f = this.1;
-//     //     MappingRef(this.0, Self::compose(f, g))
-//     // }
-//
-//     fn get<'a, U: 'a>(&'a self) -> U
-//     where F: Fn(&'a T) -> U
-//     {
-//          (self.1)(&self.0)
-//     }
-// }
-//
-fn g() -> impl RefChain<'_> {
+fn g() -> Box<dyn for<'a> RefChain<'a, Output = &'a str>> {
     let x = vec!["a".to_string()];
-    let x = Mref::new(x).refmap(|x| x.get(0)).refmap(|x| x.unwrap().as_str());
+    let x = Mref::new(x)
+        .refmap(|x| x.get(0))
+        .refmap(|x| x.unwrap().as_str());
     //
     // let s:String = a.get();
-    x
+    // println!("{:?}", x.refget());
+    Box::new(x)
 }
 
 fn f() {
-
-    println!("{:?}", g().refget());
+    let a = g();
+    println!("{:?}", a.refget());
+    g();
 }
