@@ -443,7 +443,7 @@ impl<'a, T: 'a> Bref<'a, T> {
 }
 
 trait RefChain<'a> {
-    type Output;
+    type Output: 'a;
     fn refget(&'a self) -> Self::Output;
 }
 
@@ -549,15 +549,37 @@ impl<T> Mbase<T> {
 //     }
 // }
 //
-fn g() -> impl RefChain<'_> {
+//
+use core::mem::ManuallyDrop;
+struct Wrapper<'a, T>(Box<dyn RefChain<'a, Output = T> + 'a>);
+
+impl<'a, T: 'a> Wrapper<'a, T> {
+    fn new(x: impl RefChain<'a, Output = T> + 'a) -> Self {
+        Self(Box::new(x))
+    }
+
+    fn get<'b>(&'b self) -> T
+        where 'b: 'a
+
+    {
+        self.0.refget()
+    }
+}
+
+
+fn g<'a>() -> impl RefChain<'a, Output = &'a str> {
     let x = vec!["a".to_string()];
-    let x = Mref::new(x).refmap(|x| x.get(0)).refmap(|x| x.unwrap().as_str());
+    let x = Mref::new(x).refmap(|x| x.get(0)).refmap(|x| x.unwrap().as_str()).refmap(|x| x);
     //
     // let s:String = a.get();
+    // println!("{:?}", x.refget());
+    // move || x.refget()
     x
 }
 
 fn f() {
+    let a = Wrapper::new(g());
 
-    println!("{:?}", g().refget());
+    // g();
+    // println!("{:?}", a.0.refget());
 }
