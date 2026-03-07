@@ -434,130 +434,57 @@ use std::ops::Deref;
 struct Mbase<T>(T);
 struct Mref<T, F = fn(&T) -> &T>(T, F);
 
-struct Bref<'a, T: 'a, F = fn(&T) -> &T>(T, F, std::marker::PhantomData<&'a T>);
-
-impl<'a, T: 'a> Bref<'a, T> {
-    fn new(x: T) -> Bref<'a, T, fn(&T) -> &T> {
-        Bref(x, |x| x, PhantomData)
+impl<T> Mbase<T> {
+    fn new(x: T) -> Self {
+        Mbase(x)
     }
-}
 
-trait RefChain<'a> {
-    type Output;
-    fn refget(&'a self) -> Self::Output;
-}
-
-impl<'a, T: 'a> RefChain<'a> for Mbase<T> {
-    type Output = &'a T;
-    fn refget(&self) -> &T {
-        &self.0
+    fn refmap<U: ?Sized, F: Fn(&T) -> &U>(self, f: F) -> Mref<Self, F> {
+        Mref(self, f)
     }
-}
-
-impl<'a, T: 'a, U: 'a, F> RefChain<'a> for Mref<T, F>
-where
-    T: RefChain<'a>,
-    T::Output: 'a,
-    F: Fn(T::Output) -> U,
-{
-    type Output = U;
-    fn refget(&'a self) -> Self::Output {
-        (self.1)(self.0.refget())
+    fn ownmap<U, F: Fn(&T) -> U>(self, f: F) -> Mref<Self, impl Fn(&T) -> Mref<U, F>> {
+        Mref(self, f)
     }
 }
 
 impl<T> Mref<T> {
-    fn new(x: T) -> Mbase<T> {
-        Mbase(x)
+    fn new(x: T) -> Self {
+        Mref(x, |x| x)
     }
 }
 
-impl<'a, T, F> Mref<T, F>
+impl<T, F> Mref<T, F> {
+
+    fn refmap<U: ?Sized, G>(self, f: G) -> Mref<Self, G>
     where
-        Mref<T, F>: RefChain<'a>,
-        <Mref<T, F> as RefChain<'a>>::Output: 'a
+        Self: Deref,
+        G: Fn(&<Self as Deref>::Target) -> &U
+    {
+        Mref(self, f)
+    }
+}
+
+impl<T> Deref for Mbase<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T, F, U: ?Sized> Deref for Mref<T, F>
+    where
+        T: Deref,
+        F: Fn(&T::Target) -> &U
 {
-    fn refmap<V: 'a, G: Fn(<Mref<T, F> as RefChain<'a>>::Output) -> V>(self, f: G) -> Mref<Self, G>
-    {
-        Mref(self, f)
+    type Target = U;
+    fn deref(&self) -> &Self::Target {
+        (self.1)(&self.0)
     }
-}
-
-impl<T> Mbase<T> {
-    fn refmap<'a, U: 'a, F: Fn(&'a T) -> U>(self, f: F) -> Mref<Self, F>
-    where
-        T: 'a,
-    {
-        Mref(self, f)
-    }
-}
-
-// impl<T, F, U> Deref for Mref<T, F>
-//     where F: Fn(&T) -> &U,
-// {
-//     type Target = U;
-//     fn deref(&self) -> &Self::Target {
-//         (self.1)(&self.0)
-//     }
-// }
-
-// impl<T, U, F: Fn(&T) -> U> From<&Mref<T, F>> for U
-// {
-//     fn from(self) -> U {
-//         (self.1)(&self.0)
-//     }
-// }
-
-// struct Ref<'a, T: 'a>(T);
-//
-// impl<T> MappingRef<T> {
-//     fn new(x: T) -> MappingRef<T, fn(&T) -> &T> {
-//         MappingRef(x, |x| x)
-//     }
-// }
-//
-// impl<T, F> MappingRef<T, F> {
-//     fn compose<U: 'static, G, V>(f: F, g: G) -> impl Fn(&T) -> &V where
-//
-//         F: Fn(&T) -> &U,
-//         G: Fn(&U) -> &V, {
-//         move |x| g(f(x))
-//     }
-//
-//     fn map<U, G, V>(this: Self, g: G) -> MappingRef<T, impl for<'a> Fn(&'a T) -> &'a V>
-//     where
-//         F: for<'a> Fn(&'a T) -> Ref<'a, U>,
-//         G: for<'a> Fn(Ref<'a, U>) -> &'a V,
-//     {
-//         let f = this.1;
-//         MappingRef(this.0, Self::compose(f, g))
-//     }
-//
-//     // fn map2<U, G, V>(this: Self, g: G) -> MappingRef<T, impl Fn(&T) -> &V>
-//     // where
-//     //     F: forFn(&T) -> U,
-//     //     G: Fn(U) -> &V,
-//     // {
-//     //     let f = this.1;
-//     //     MappingRef(this.0, Self::compose(f, g))
-//     // }
-//
-//     fn get<'a, U: 'a>(&'a self) -> U
-//     where F: Fn(&'a T) -> U
-//     {
-//          (self.1)(&self.0)
-//     }
-// }
-//
-fn g() -> impl RefChain<'_> {
-    let x = vec!["a".to_string()];
-    let x = Mref::new(x).refmap(|x| x.get(0)).refmap(|x| x.unwrap().as_str());
-    //
-    // let s:String = a.get();
-    x
 }
 
 fn f() {
+    let x = Mbase(vec!["aaaaaaaa".to_string()]).refmap(|x| &x[0]).refmap(|x| &x[0..1]);
+    let y: &str = &*x;
 
-    println!("{:?}", g().refget());
+    println!("{:?}", y);
 }
