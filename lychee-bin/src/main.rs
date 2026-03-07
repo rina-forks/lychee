@@ -454,15 +454,15 @@ impl<'a, T: 'a> RefChain<'a> for Mbase<T> {
     }
 }
 
-impl<'a, T: 'a, F> RefChain<'a> for Mref<T, F>
+impl<'a, T: 'a, U: 'a, F> RefChain<'a> for Mref<T, F>
 where
     T: RefChain<'a>,
     T::Output: 'a,
-    F: FnWithLifetime<'a, T::Output>
+    F: Fn(T::Output) -> U,
 {
-    type Output = F::Output;
+    type Output = U;
     fn refget(&'a self) -> Self::Output {
-        self.1.call(self.0.refget())
+        (self.1)(self.0.refget())
     }
 }
 
@@ -472,27 +472,15 @@ impl<T> Mref<T> {
     }
 }
 
-trait FnWithLifetime<'a, Input: 'a>: Fn(Input) {
-    type Output: 'a;
-    fn call(&self, x: Input) -> Self::Output;
-}
-impl<'a, T: 'a, V: 'a, F> FnWithLifetime<'a, T> for F
-    where F: Fn(T) -> V {
-    type Output = V;
-    fn call(&self, x: T) -> V {
-        (self)(x)
-    }
-}
-
-impl<T, F> Mref<T, F>
+impl<'a, T, F> Mref<T, F>
 where
-    for<'a> T: RefChain<'a>,
-    for<'a> Mref<T, F>: RefChain<'a>,
+    T: RefChain<'a>,
+    Mref<T, F>: RefChain<'a>,
 {
-    fn refmap<G>(self, f: G) -> Mref<Self, G>
-    where
-        G: for<'b> FnWithLifetime<'b, <Self as RefChain<'b>>::Output>
-    {
+    fn refmap<V: 'a, G: Fn(<Mref<T, F> as RefChain<'a>>::Output) -> V>(
+        self,
+        f: G,
+    ) -> Mref<Self, G> {
         Mref(self, f)
     }
 
@@ -505,20 +493,14 @@ where
 }
 
 impl<T> Mbase<T> {
-    fn refmap<'b, G>(self, f: G) -> Mref<Self, G>
+    fn refmap<'a, U: 'a, F: Fn(&'a T) -> U>(self, f: F) -> Mref<Self, F>
     where
-        G: FnWithLifetime<'b, <Self as RefChain<'b>>::Output>,
-        T: 'b
+        T: 'a,
     {
         Mref(self, f)
     }
 }
-
-// fn go() -> impl for<'a> RefChain<'a, Output = &'a String> {
-//     Mref::new("s".to_string()).refmap(|x| x)
-// }
-
-fn g() {
+fn g() -> Box<dyn for<'a> RefChain<'a, Output = &'a str>> {
     let x = vec!["a".to_string()];
     let x = Mref::new(x)
         .refmap(|x| x.get(0))
@@ -526,10 +508,11 @@ fn g() {
     //
     // let s:String = a.get();
     // println!("{:?}", x.refget());
-    Box::new(x);
+    Box::new(x)
 }
 
 fn f() {
-    println!("{:?}", g().refget());
+    let a = g();
+    println!("{:?}", a.refget());
     g();
 }
