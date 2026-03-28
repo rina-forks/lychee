@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn test_email_with_unicode() {
-        let input = "a@example.com我们  b@example.com- c@example.com，";
+        let input = "a@example.com我们  b@example.com- c@example.com， https://a.com/我们中国";
         let mut links: Vec<String> = extract(input).into_iter().map(|x| x.text).collect();
         links.sort();
         assert_eq!(
