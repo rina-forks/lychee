@@ -1,4 +1,6 @@
-use std::{convert::TryFrom, fmt::Display, net::IpAddr};
+use std::{convert::TryFrom, fmt::Display, net::IpAddr,
+str::FromStr
+};
 
 use email_address::EmailAddress;
 use ip_network::Ipv6Network;
@@ -249,7 +251,10 @@ impl TryFrom<&str> for Uri {
                 // - `check_if_email_exists` does additional spam detection,
                 //   which we only want to execute when checking the email
                 //   addresses, but not when printing all links with `--dump`.
-                if EmailAddress::is_valid(s) {
+                if let Some(email_text) = s.strip_prefix("mailto:") {
+                    let email = EmailAddress::from_str(email_text)?;
+                    let url = Url::parse(&email.to_uri())?;
+                    return Ok(url.into());
                     // Use the `mailto:` scheme for mail addresses,
                     // which will allow `Url::parse` to parse them.
                     if let Ok(uri) = Url::parse(&format!("mailto:{s}")) {

@@ -1,6 +1,3 @@
-use std::sync::LazyLock;
-
-use linkify::LinkFinder;
 use url::Url;
 
 /// Attempts to parse a string which might represent a URL or a filesystem path.
@@ -21,13 +18,6 @@ pub(crate) fn parse_url_or_path(input: &str) -> Result<Url, &str> {
         Ok(url) => Ok(url),
         _ => Err(input),
     }
-}
-
-static LINK_FINDER: LazyLock<LinkFinder> = LazyLock::new(LinkFinder::new);
-
-// Use `LinkFinder` to offload the raw link searching in plaintext
-pub(crate) fn find_links(input: &str) -> impl Iterator<Item = linkify::Link<'_>> {
-    LINK_FINDER.links(input)
 }
 
 #[cfg(test)]

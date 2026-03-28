@@ -1,21 +1,37 @@
-use crate::{
-    types::uri::raw::{RawUri, SpanProvider},
-    utils::url,
-};
+use linkify::{LinkFinder, LinkKind};
+
+use crate::types::uri::raw::{RawUri, SpanProvider};
 
 /// Extract unparsed URL strings from plaintext
 pub(crate) fn extract_raw_uri_from_plaintext(
     input: &str,
     span_provider: &impl SpanProvider,
 ) -> Vec<RawUri> {
-    url::find_links(input)
+    // 1. Find absolute URLs.
+    let urls = LinkFinder::new()
+        .kinds(&[LinkKind::Url])
+        .links(input)
         .map(|uri| RawUri {
             text: uri.as_str().to_owned(),
             element: None,
             attribute: None,
             span: span_provider.span(uri.start()),
-        })
-        .collect()
+        });
+
+    // 2. Find emails. Excluding based on `--include-mail` happens later.
+    let emails = LinkFinder::new()
+        .kinds(&[LinkKind::Email])
+        .links(input)
+        .map(|uri| RawUri {
+            // prefix with `mailto:` to avoid invalid emails falling back
+            // to relative links.
+            text: format!("mailto:{}", uri.as_str()),
+            element: None,
+            attribute: None,
+            span: span_provider.span(uri.start()),
+        });
+
+    urls.chain(emails).collect()
 }
 
 #[cfg(test)]
