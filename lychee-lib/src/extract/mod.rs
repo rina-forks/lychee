@@ -85,7 +85,6 @@ mod tests {
             FileType, InputContent, ResolvedInputSource,
             uri::raw::{RawUriSpan, span},
         },
-        utils::url::find_links,
     };
 
     fn extract_uris(input: &str, file_type: FileType) -> HashSet<Uri> {
@@ -192,7 +191,9 @@ mod tests {
     #[test]
     fn test_md_escape() {
         let input = r"http://msdn.microsoft.com/library/ie/ms535874\(v=vs.85\).aspx";
-        let links: Vec<_> = find_links(input).collect();
+        let links: Vec<_> = extract_uris(input, FileType::Plaintext)
+            .into_iter()
+            .collect();
         let expected = "http://msdn.microsoft.com/library/ie/ms535874(v=vs.85).aspx)";
 
         matches!(&links[..], [link] if link.as_str() == expected);
