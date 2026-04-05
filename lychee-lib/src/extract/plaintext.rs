@@ -1,11 +1,8 @@
 use std::{borrow::Cow, ops::Range, sync::LazyLock};
 
-use regex::{CaptureMatches, Captures, Match, Regex};
+use regex::{Captures, Regex};
 
-use crate::{
-    types::uri::raw::{RawUri, SpanProvider},
-    utils::url,
-};
+use crate::types::uri::raw::{RawUri, SpanProvider};
 
 static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -17,7 +14,7 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
     # https://github.github.com/gfm/#email-autolink
     | < (?P<email_autolink>
-        [a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+
+        [a-zA-Z0-9.!\#$%&'*+/=?^_`{|}~-]+
         @
         [a-zA-Z0-9]
         (?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?
@@ -45,34 +42,34 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         [^[:space:]<]* )
 
     | (?P<extended_email_autolink>
-        [[:alnum:].-_+]+
+        [[:alnum:]._+-]+
         @
-        [[:alnum:]-_]+
+        [[:alnum:]_-]+
         (?: \. [[:alnum:]_-]+ )+ )
 
     | (?P<extended_protocol_autolink>
 
         mailto:
-        [[:alnum:].-_+]+
+        [[:alnum:]._+-]+
         @
-        [[:alnum:]-_]+
+        [[:alnum:]_-]+
         (?: \. [[:alnum:]_-]+ )+
 
         |
 
         xmpp:
-        [[:alnum:].-_+]+
+        [[:alnum:]._+-]+
         @
-        [[:alnum:]-_]+
+        [[:alnum:]_-]+
         (?: \. [[:alnum:]_-]+ )+
-        (?: / [[:alnum:]@.]+ )
+        (?: / [[:alnum:]@.]+ ) )
 
     "#,
     )
     .expect("gfm autolinks regex invalid")
 });
 
-pub enum Autolinks<'a> {
+pub enum Autolink<'a> {
     Uri(&'a str),
     Email(&'a str),
     ExtendedWww(&'a str),
@@ -81,7 +78,7 @@ pub enum Autolinks<'a> {
     ExtendedProtocol(&'a str),
 }
 
-impl<'a> Autolinks<'a> {
+impl<'a> Autolink<'a> {
     /// https://github.github.com/gfm/#extended-autolink-path-validation
     fn extended_autolink_path_validation(text: &str) -> &str {
         let mut text = text.trim_end_matches(&['?', '!', '.', ',', ':', '*', '_', '~']);
@@ -129,23 +126,23 @@ impl<'a> Autolinks<'a> {
     /// a
     pub fn raw_text(&self) -> &str {
         match self {
-            Autolinks::Uri(s)
-            | Autolinks::Email(s)
-            | Autolinks::ExtendedWww(s)
-            | Autolinks::ExtendedUrl(s)
-            | Autolinks::ExtendedEmail(s)
-            | Autolinks::ExtendedProtocol(s) => s,
+            Autolink::Uri(s)
+            | Autolink::Email(s)
+            | Autolink::ExtendedWww(s)
+            | Autolink::ExtendedUrl(s)
+            | Autolink::ExtendedEmail(s)
+            | Autolink::ExtendedProtocol(s) => s,
         }
     }
 
     /// a
     pub fn uri_text(&self) -> Cow<'a, str> {
         match self {
-            Autolinks::Uri(s) | Autolinks::ExtendedUrl(s) | Autolinks::ExtendedProtocol(s) => {
+            Autolink::Uri(s) | Autolink::ExtendedUrl(s) | Autolink::ExtendedProtocol(s) => {
                 Cow::Borrowed(s)
             }
-            Autolinks::Email(s) | Self::ExtendedEmail(s) => Cow::Owned(format!("mailto:{s}")),
-            Autolinks::ExtendedWww(s) => Cow::Owned(format!("http://{s}")),
+            Autolink::Email(s) | Self::ExtendedEmail(s) => Cow::Owned(format!("mailto:{s}")),
+            Autolink::ExtendedWww(s) => Cow::Owned(format!("http://{s}")),
         }
     }
 
@@ -184,7 +181,7 @@ pub(crate) fn extract_raw_uri_from_plaintext(
     input: &str,
     span_provider: &impl SpanProvider,
 ) -> Vec<RawUri> {
-    Autolinks::find(input)
+    Autolink::find(input)
         .map(|(autolink, range)| RawUri {
             text: autolink.uri_text().to_string(),
             element: None,
@@ -224,5 +221,19 @@ mod tests {
 
         let uris: Vec<RawUri> = extract(input);
         assert_eq!(vec![uri], uris);
+    }
+
+    #[test]
+    fn test_extract_email() {
+        let input = "foo@bar.baz\nhello@mail+xyz.example\nhello+xyz@mail.example";
+
+        let uris: Vec<String> = extract(input).into_iter().map(|x| x.text).collect();
+        assert_eq!(
+            uris,
+            vec![
+                "mailto:foo@bar.baz".to_string(),
+                "mailto:hello+xyz@mail.example".to_string()
+            ]
+        );
     }
 }
