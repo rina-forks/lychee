@@ -80,9 +80,7 @@ pub enum Autolink<'a> {
 
 impl<'a> Autolink<'a> {
     /// https://github.github.com/gfm/#extended-autolink-path-validation
-    fn extended_autolink_path_validation(text: &str) -> &str {
-        let mut text = text.trim_end_matches(&['?', '!', '.', ',', ':', '*', '_', '~']);
-
+    fn extended_autolink_path_validation(mut text: &str) -> &str {
         if text.ends_with(')') {
             let opens = text.matches('(').count();
             let mut extra_closes = text.match_indices(')').skip(opens);
@@ -98,6 +96,8 @@ impl<'a> Autolink<'a> {
                 }
             }
         }
+
+        let text = text.trim_end_matches(&['?', '!', '.', ',', ':', '*', '_', '~']);
 
         text
     }
