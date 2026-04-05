@@ -10,16 +10,13 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
     # https://github.github.com/gfm/#uri-autolink
     < (?P<uri_autolink>
-        [a-z][a-z0-9+.-]{1,31} : [^[:space:][:cntrl:]<>]* ) >
+        [a-z][a-z0-9+.-]{1,31} : [^\s[:cntrl:]<>]* ) >
 
     # https://github.github.com/gfm/#email-autolink
     | < (?P<email_autolink>
         [a-zA-Z0-9.!\#$%&'*+/=?^_`{|}~-]+
         @
-        [a-zA-Z0-9]
-        (?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?
-        (?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*
-        ) >
+        [^\s[:cntrl:]<>]* ) >
 
     | (?P<extended_www_autolink>
         www\.
@@ -29,7 +26,7 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         (?: \. [[:alnum:]_-]+ )*
 
         # path:
-        [^[:space:]<]* )
+        [^ < \s [ \p{Punctuation} && [:^punct:] ] ]* )
 
     | (?P<extended_url_autolink>
         https?://
@@ -39,7 +36,7 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         (?: \. [[:alnum:]_-]+ )*
 
         # path:
-        [^[:space:]<]* )
+        [^ < \s [ \p{Punctuation} && [:^punct:] ] ]* )
 
     | (?P<extended_email_autolink>
         [[:alnum:]._+-]+
