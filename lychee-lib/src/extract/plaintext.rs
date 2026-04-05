@@ -80,7 +80,11 @@ pub enum Autolink<'a> {
 
 impl<'a> Autolink<'a> {
     /// https://github.github.com/gfm/#extended-autolink-path-validation
-    fn extended_autolink_path_validation(mut text: &str) -> &str {
+    fn extended_autolink_path_validation(autolink: Self) -> Self {
+        let (Autolink::ExtendedWww(mut text) | Autolink::ExtendedUrl(mut text)) = autolink else {
+            return autolink;
+        };
+
         if text.ends_with(')') {
             let opens = text.matches('(').count();
             let mut extra_closes = text.match_indices(')').skip(opens);
@@ -99,28 +103,46 @@ impl<'a> Autolink<'a> {
 
         let text = text.trim_end_matches(&['?', '!', '.', ',', ':', '*', '_', '~']);
 
-        text
+        autolink.set_raw_text(text)
+    }
+
+    fn extended_autolink_url_domain_validation(autolink: Self) -> Option<Self> {
+        let domain_and_rest = match autolink {
+            Autolink::ExtendedWww(s) => s,
+            Autolink::ExtendedUrl(link) => link.split_once("://").map_or(link, |x| x.0),
+            _ => return Some(autolink),
+        };
+
+        let domain = domain_and_rest
+            .split_once(&['/', '&', '?', '#'])
+            .map_or(domain_and_rest, |x| x.0);
+
+        let domain_parts = domain.rsplitn(3, '.');
+        if domain_parts.take(2).any(|x| x.contains('_')) {
+            None
+        } else {
+            Some(autolink)
+        }
+    }
+
+    fn extended_autolink_email_domain_validation(autolink: Self) -> Option<Self> {
+        let (Self::ExtendedEmail(link) | Self::ExtendedProtocol(link)) = autolink else {
+            return Some(autolink);
+        };
+
+        let domain = link.split_once('/').map_or(link, |x| x.0);
+        if domain.ends_with(&['-', '_']) {
+            None
+        } else {
+            Some(autolink)
+        }
     }
 
     fn autolink_validation(autolink: Self) -> Option<Self> {
-        match autolink {
-            Self::Uri(_) | Self::Email(_) => Some(autolink),
-
-            Self::ExtendedWww(link) => Some(Self::ExtendedWww(
-                Self::extended_autolink_path_validation(link),
-            )),
-            Self::ExtendedUrl(link) => Some(Self::ExtendedUrl(
-                Self::extended_autolink_path_validation(link),
-            )),
-
-            Self::ExtendedEmail(link) | Self::ExtendedProtocol(link)
-                if link.ends_with(&['-', '_']) =>
-            {
-                None
-            }
-
-            Self::ExtendedEmail(_) | Self::ExtendedProtocol(_) => Some(autolink),
-        }
+        let autolink = Self::extended_autolink_path_validation(autolink);
+        let autolink = Self::extended_autolink_url_domain_validation(autolink)?;
+        let autolink = Self::extended_autolink_email_domain_validation(autolink)?;
+        Some(autolink)
     }
 
     /// a
@@ -132,6 +154,17 @@ impl<'a> Autolink<'a> {
             | Autolink::ExtendedUrl(s)
             | Autolink::ExtendedEmail(s)
             | Autolink::ExtendedProtocol(s) => s,
+        }
+    }
+
+    fn set_raw_text(&self, s: &'a str) -> Self {
+        match self {
+            Autolink::Uri(_) => Autolink::Uri(s),
+            Autolink::Email(_) => Autolink::Email(s),
+            Autolink::ExtendedWww(_) => Autolink::ExtendedWww(s),
+            Autolink::ExtendedUrl(_) => Autolink::ExtendedUrl(s),
+            Autolink::ExtendedEmail(_) => Autolink::ExtendedEmail(s),
+            Autolink::ExtendedProtocol(_) => Autolink::ExtendedProtocol(s),
         }
     }
 
