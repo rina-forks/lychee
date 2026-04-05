@@ -16,7 +16,7 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     | < (?P<email_autolink>
         [a-zA-Z0-9.!\#$%&'*+/=?^_`{|}~-]+
         @
-        [^\s[:cntrl:]<>]* ) >
+        [^\s[:cntrl:]<>]+ ) >
 
     | (?P<extended_www_autolink>
         www\.
@@ -26,7 +26,7 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         (?: \. [[:alnum:]_-]+ )*
 
         # path:
-        [^ < \s [ \p{Punctuation} && [:^punct:] ] ]* )
+        [^ <> \s [ \p{Punctuation} && [:^punct:] ] ]* )
 
     | (?P<extended_url_autolink>
         https?://
@@ -36,7 +36,7 @@ static GFM_AUTOLINKS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         (?: \. [[:alnum:]_-]+ )*
 
         # path:
-        [^ < \s [ \p{Punctuation} && [:^punct:] ] ]* )
+        [^ <> \s [ \p{Punctuation} && [:^punct:] ] ]* )
 
     | (?P<extended_email_autolink>
         [[:alnum:]._+-]+
