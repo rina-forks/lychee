@@ -1,5 +1,8 @@
+use std::pin::Pin;
+use std::pin::pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::task::Poll;
 use std::time::Duration;
 
 use futures::{FutureExt, Stream, StreamExt, future::Either};
@@ -29,6 +32,34 @@ use crate::{ExitCode, cache::Cache};
 pub(crate) async fn check(
     params: CommandParams<impl Stream<Item = Result<Request, RequestError>>>,
 ) -> Result<(ResponseStats, Cache, ExitCode, Arc<HostPool>), ErrorKind> {
+    let a = Arc::new(Mutex::new(
+        futures::stream::iter(vec![1, 2, 3, 4].into_iter()).boxed(),
+    ));
+    let data = Arc::new(Mutex::new(None));
+    let mut waker: std::task::Waker;
+
+    let a1 = futures::stream::poll_fn(|cx| -> Poll<Option<i32>> {
+        let mut a = pin!(a.lock().unwrap());
+        let mut data = data.lock().unwrap();
+
+        match *data {
+            Some(x) if x > 2 => return Poll::Ready(data.take()),
+            Some(_) => panic!("the other thread has stored a value which we cannot handle. this will deadlock"),
+            // waker.clone_from(cx.waker()),
+            None => todo!(),
+        }
+
+        match a.poll_next_unpin(cx) {
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some(x)) if x > 2 => Poll::Ready(Some(x)),
+            Poll::Ready(Some(x)) => {
+                *data = Some(x);
+                Poll::Pending
+            }
+            Poll::Pending => todo!(),
+        }
+    });
+
     let CommandParams {
         client,
         cache,
