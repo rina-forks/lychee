@@ -1,10 +1,14 @@
+use std::ops::Deref;
+use std::ops::DerefMut;
 use std::pin::Pin;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::task::Poll;
+use std::task::Waker;
 use std::time::Duration;
 
+use futures::never::Never;
 use futures::{FutureExt, Stream, StreamExt, future::Either};
 use log::warn;
 use reqwest::Url;
@@ -27,6 +31,57 @@ use crate::formatters::suggestion::Suggestion;
 use crate::progress::Progress;
 use crate::{ExitCode, cache::Cache};
 
+pub struct Partition<St, F, const I: usize = 0, const N: usize = 1>
+where
+    St: Stream,
+{
+    state: Arc<Mutex<(St, Option<St::Item>, [Option<Waker>; N])>>,
+    f: F,
+}
+
+impl<St, F> Partition<St, F>
+where
+    St: Stream,
+{
+    pub fn new(st: St) -> Partition<St, fn(St::Item) -> Result<St::Item, St::Item>> {
+        let state = Arc::new(Mutex::new((st, None, [None])));
+        Partition {
+            state,
+            f: Result::Ok,
+        }
+    }
+}
+
+impl<T, St, F, const I: usize, const N: usize> Stream for Partition<St, F, I, N>
+where
+    St: Stream + Unpin,
+    F: FnMut(St::Item) -> Result<T, St::Item>,
+{
+    type Item = T;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let mut state = self.state.lock().unwrap();
+
+        let (st, data, wakers) = state.deref_mut();
+
+        match &mut wakers[I] {
+            Some(waker) => waker.clone_from(cx.waker()),
+            empty => *empty = Some(cx.waker().clone()),
+        }
+
+        match st.poll_next_unpin(cx) {
+            Poll::Ready(None) =>
+            todo!(),
+            Poll::Pending => todo!(),
+        }
+
+        todo!()
+    }
+}
+
 #[allow(clippy::match_bool, reason = "more readable and compact")]
 #[allow(clippy::too_many_lines, reason = "for now...")]
 pub(crate) async fn check(
@@ -44,7 +99,9 @@ pub(crate) async fn check(
 
         match *data {
             Some(x) if x > 2 => return Poll::Ready(data.take()),
-            Some(_) => panic!("the other thread has stored a value which we cannot handle. this will deadlock"),
+            Some(_) => panic!(
+                "the other thread has stored a value which we cannot handle. this will deadlock"
+            ),
             // waker.clone_from(cx.waker()),
             None => todo!(),
         }
