@@ -8,7 +8,9 @@ use std::task::Poll;
 use std::task::Waker;
 use std::time::Duration;
 
+use futures::future::Ready;
 use futures::never::Never;
+use futures::stream;
 use futures::{FutureExt, Stream, StreamExt, future::Either};
 use log::warn;
 use reqwest::Url;
@@ -31,26 +33,14 @@ use crate::formatters::suggestion::Suggestion;
 use crate::progress::Progress;
 use crate::{ExitCode, cache::Cache};
 
-pub struct Partition<St, F, const I: usize = 0, const N: usize = 1>
-where
-    St: Stream,
-{
-    state: Arc<Mutex<(St, Option<St::Item>, [Option<Waker>; N])>>,
-    f: F,
+async fn g<T, U>(_: T) -> Ready<Option<U>> {
+    None
+}
+fn tostream<T, U>(f: impl Future<Output = T>) -> stream::FilterMap<stream::Once<impl ?Sized>, _, fn(_) -> impl ?Sized> {
+    stream::once(f).filter_map(g::<T, U>)
 }
 
-impl<St, F> Partition<St, F>
-where
-    St: Stream,
-{
-    pub fn new(st: St) -> Partition<St, fn(St::Item) -> Result<St::Item, St::Item>> {
-        let state = Arc::new(Mutex::new((st, None, [None])));
-        Partition {
-            state,
-            f: Result::Ok,
-        }
-    }
-}
+// we should jsut use channels to split the stream.
 
 impl<T, St, F, const I: usize, const N: usize> Stream for Partition<St, F, I, N>
 where
@@ -73,8 +63,7 @@ where
         }
 
         match st.poll_next_unpin(cx) {
-            Poll::Ready(None) =>
-            todo!(),
+            Poll::Ready(None) => todo!(),
             Poll::Pending => todo!(),
         }
 
