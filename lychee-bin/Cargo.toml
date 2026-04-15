@@ -56,6 +56,7 @@ tokio-stream = "0.1.18"
 toml = "1.1.2"
 url = "2.5.8"
 quick-junit = "0.6.0"
+par-stream = { version = "0.10.2", features = ["runtime-tokio"] }
 
 [dev-dependencies]
 assert_cmd = "2.2.0"

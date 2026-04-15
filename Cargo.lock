@@ -2298,6 +2298,7 @@ dependencies = [
  "log",
  "lychee-lib",
  "numeric-sort",
+ "par-stream",
  "predicates",
  "pretty_assertions",
  "quick-junit",

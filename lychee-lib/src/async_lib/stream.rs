@@ -5,8 +5,10 @@ use futures::Stream;
 use futures::StreamExt as _;
 use futures::future::FusedFuture;
 use futures::never::Never;
+use futures::stream::FuturesUnordered;
 use futures::{future, stream};
 use log::warn;
+use par_stream::StreamExt as _;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -105,6 +107,56 @@ pub trait StreamExt: Stream {
         let err_stream = ReceiverStream::new(err_recv).concurrently_with(future::pending());
 
         (ok_stream, err_stream)
+    }
+
+    /// a
+    fn par_buffer_unordered<T>(
+        self,
+        buffer_size: usize,
+        parallelism: usize,
+    ) -> ConcurrentlyWith<ReceiverStream<T>, impl FusedFuture>
+    where
+        Self: Sized,
+        Self::Item: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let (input_send, input_recv) = mpsc::channel(buffer_size);
+        let (output_send, output_recv) = mpsc::channel(buffer_size);
+
+        let input_driver = self
+            .stateful_then(input_send, async |input_send, x| {
+                input_send.send(x).await.unwrap_or_else(|_| {
+                    warn!("par_buffer_unordered: cannot send item. input channel has been closed");
+                });
+                Some((input_send, ()))
+            })
+            .collect::<()>()
+            .left_future();
+
+        let input_stream = ReceiverStream::new(input_recv).shared();
+
+        let handlers = (0..parallelism).map(move |_| {
+            let output_send = output_send.clone();
+            let input_stream = input_stream.clone();
+            par_stream::rt::spawn(
+                input_stream
+                    .stateful_then(output_send, async |output_send, x| {
+                        let x = x.await;
+                        output_send.send(x).await.unwrap_or_else(|_| {
+                            warn!("par_buffer_unordered: cannot send item. output channel has been closed");
+                        });
+                        Some((output_send, ()))
+                    })
+                    .collect::<()>(),
+            ).right_future()
+        });
+
+        let all_drivers = std::iter::once(input_driver)
+            .chain(handlers)
+            .collect::<FuturesUnordered<_>>()
+            .collect::<()>();
+
+        ReceiverStream::new(output_recv).concurrently_with(all_drivers)
     }
 }
 
