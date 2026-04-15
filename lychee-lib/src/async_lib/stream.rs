@@ -121,6 +121,8 @@ pub trait StreamExt: Stream {
         T: Send + 'static,
     {
         let (input_send, input_recv) = mpsc::channel(buffer_size);
+        let input_stream = ReceiverStream::new(input_recv).shared();
+
         let (output_send, output_recv) = mpsc::channel(buffer_size);
 
         let input_driver = self
@@ -132,8 +134,6 @@ pub trait StreamExt: Stream {
             })
             .collect::<()>()
             .left_future();
-
-        let input_stream = ReceiverStream::new(input_recv).shared();
 
         let handlers = (0..parallelism).map(move |_| {
             let output_send = output_send.clone();

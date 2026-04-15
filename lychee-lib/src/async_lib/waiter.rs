@@ -110,6 +110,7 @@
 //! ```
 
 use futures::never::Never;
+use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 /// Manager for a particular wait group. This can spawn a number of [`WaitGuard`]s
@@ -119,11 +120,13 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 /// waiting consumes the [`WaitGroup`]. Additionally, once all [`WaitGuard`]s
 /// have been dropped, it is not possible to create any more [`WaitGuard`]s.
 #[derive(Debug)]
-pub struct WaitGroup {
+pub struct WaitGroup<T = ()> {
     /// [`Receiver`] is held to wait for multiple [`Sender`]s and detect
     /// when they have closed. The [`Never`] type means no value can/will
     /// ever be received through the channel.
     recv: Receiver<Never>,
+
+    data: Arc<T>,
 }
 
 /// RAII guard held by a task which is being waited for.
@@ -134,11 +137,12 @@ pub struct WaitGroup {
 /// A [`WaitGuard`] can be cloned using [`WaitGuard::clone`]. This allows
 /// a task to spawn additional tasks, recursively.
 #[derive(Clone, Debug)]
-pub struct WaitGuard {
+pub struct WaitGuard<T = ()> {
     /// [`Sender`] is held to keep the [`Receiver`] end open (stored in [`WaitGroup`]).
     /// The dropping of all senders will cause the receiver to detect and close.
     /// The [`Never`] type means no value can/will ever be sent through the channel.
     _send: Sender<Never>,
+    _data: Arc<T>,
 }
 
 impl WaitGroup {
@@ -148,12 +152,30 @@ impl WaitGroup {
     /// If needed, new guards should be created by cloning the returned [`WaitGuard`].
     #[must_use]
     pub fn new() -> (Self, WaitGuard) {
-        let (send, recv) = channel(1);
-        (Self { recv }, WaitGuard { _send: send })
+        Self::new_with_data(())
+    }
+}
+
+impl<T> WaitGroup<T> {
+    /// If needed, new guards should be created by cloning the returned [`WaitGuard`].
+    #[must_use]
+    pub fn new_with_data(data: T) -> (Self, WaitGuard<T>) {
+        let (_send, recv) = channel(1);
+
+        let data = Arc::new(data);
+        let group = Self { recv, data };
+
+        let _data = group.data.clone();
+        let guard = WaitGuard { _send, _data };
+        (group, guard)
     }
 
-    /// Waits, asynchronously, until all the associated [`WaitGuard`]s have finished.
-    pub async fn wait(mut self) {
+    /// Waits, asynchronously, until all the associated [`WaitGuard`]s have finished,
+    /// and recovers ownership of the contained data.
+    pub async fn wait(mut self) -> T {
         let None = self.recv.recv().await;
+        Arc::into_inner(self.data).expect(
+            "there should be no other WaitGuards holding this Arc after waiting is finished",
+        )
     }
 }
