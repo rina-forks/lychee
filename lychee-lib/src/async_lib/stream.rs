@@ -4,8 +4,10 @@ use futures::FutureExt as _;
 use futures::Stream;
 use futures::StreamExt as _;
 use futures::future::FusedFuture;
+use futures::future::Ready;
 use futures::never::Never;
 use futures::stream::FuturesUnordered;
+use futures::stream::Scan;
 use futures::{future, stream};
 use log::warn;
 use par_stream::StreamExt as _;
@@ -57,6 +59,18 @@ pub trait StreamExt: Stream {
         Self: Sized,
     {
         self.take_until(future::join(fut, future::pending()))
+    }
+
+    /// a
+    fn map_with_arg<Arg, T>(
+        self,
+        arg: Arg,
+        mut f: impl FnMut(&mut Arg, Self::Item) -> T,
+    ) -> Scan<Self, Arg, Ready<Option<T>>, impl FnMut(&mut Arg, Self::Item) -> Ready<Option<T>>>
+    where
+        Self: Sized,
+    {
+        self.scan(arg, move |arg, x| future::ready(Some(f(arg, x))))
     }
 
     /// Partitions the given stream of [`Result<T, E>`] into two streams&mdash;one yielding the

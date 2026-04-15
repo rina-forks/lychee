@@ -136,13 +136,29 @@ pub struct WaitGroup<T = ()> {
 ///
 /// A [`WaitGuard`] can be cloned using [`WaitGuard::clone`]. This allows
 /// a task to spawn additional tasks, recursively.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WaitGuard<T = ()> {
     /// [`Sender`] is held to keep the [`Receiver`] end open (stored in [`WaitGroup`]).
     /// The dropping of all senders will cause the receiver to detect and close.
     /// The [`Never`] type means no value can/will ever be sent through the channel.
     _send: Sender<Never>,
-    _data: Arc<T>,
+    data: Arc<T>,
+}
+
+impl<T> WaitGuard<T> {
+    /// a
+    pub fn get(&self) -> &T {
+        &self.data
+    }
+}
+
+impl<T> Clone for WaitGuard<T> {
+    fn clone(&self) -> Self {
+        Self {
+            _send: self._send.clone(),
+            data: self.data.clone(),
+        }
+    }
 }
 
 impl WaitGroup {
@@ -165,15 +181,19 @@ impl<T> WaitGroup<T> {
         let data = Arc::new(data);
         let group = Self { recv, data };
 
-        let _data = group.data.clone();
-        let guard = WaitGuard { _send, _data };
+        let data = group.data.clone();
+        let guard = WaitGuard { _send, data };
         (group, guard)
     }
 
-    /// Waits, asynchronously, until all the associated [`WaitGuard`]s have finished,
-    /// and recovers ownership of the contained data.
-    pub async fn wait(mut self) -> T {
+    /// Waits, asynchronously, until all the associated [`WaitGuard`]s have finished.
+    pub async fn wait(&mut self) {
         let None = self.recv.recv().await;
+    }
+
+    /// a
+    pub async fn into_inner(mut self) -> T {
+        self.wait().await;
         Arc::into_inner(self.data).expect(
             "there should be no other WaitGuards holding this Arc after waiting is finished",
         )

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -5,6 +6,7 @@ use std::time::Duration;
 
 use futures::stream;
 use futures::{Stream, StreamExt, future::Either};
+use http::StatusCode;
 use log::warn;
 use reqwest::Url;
 use tokio::sync::mpsc;
@@ -49,8 +51,8 @@ pub(crate) async fn check(
     let level = cfg.verbose().log_level();
     let hide_bar = cfg.no_progress() || is_stdin_input;
 
-    let accept = cfg.accept().into();
-    let cache_exclude_status = cfg.cache_exclude_status().into();
+    let accept: HashSet<StatusCode> = cfg.accept().into();
+    let cache_exclude_status: HashSet<StatusCode> = cfg.cache_exclude_status().into();
 
     let progress = Progress::new("Extracting links", hide_bar, level, &cfg.mode());
 
@@ -61,7 +63,7 @@ pub(crate) async fn check(
 
     /* Input streams and channels (both initial and recursive) */
 
-    let (waiter, wait_guard) = WaitGroup::new();
+    let (mut waiter, wait_guard) = WaitGroup::new_with_data((client, cache));
 
     // Split initial requests into: valid requests and request errors. Note that
     // this stream closure *owns* a wait guard, so we must drop the closure after
@@ -74,7 +76,7 @@ pub(crate) async fn check(
             Ok(request) => Ok((guard, request)),
             Err(request_error) => Err((guard, request_error)),
         })
-        .partition_result::<(WaitGuard, Request), (WaitGuard, RequestError)>();
+        .partition_result::<(WaitGuard<_>, Request), (WaitGuard<_>, RequestError)>();
 
     // Further partition the request errors into request building errors (like
     // unresolved relative URLs) and fatal errors when fetching a user input fails.
@@ -85,7 +87,7 @@ pub(crate) async fn check(
                 Err(fatal_user_input_error) => Err((guard, fatal_user_input_error)),
             },
         )
-        .partition_result::<(WaitGuard, Response), (WaitGuard, ErrorKind)>();
+        .partition_result::<(WaitGuard<_>, Response), (WaitGuard<_>, ErrorKind)>();
 
     let (recursive_channel_send, recursive_channel_recv) = mpsc::channel(max_concurrency);
 
@@ -94,7 +96,9 @@ pub(crate) async fn check(
         recursive_channel_send
             .send((guard, req))
             .await
-            .unwrap_or_else(|e| warn!("unable to send recursive uri {:?} - channel closed?", e.0));
+            .unwrap_or_else(|e| {
+                warn!("unable to send recursive uri {:?} - channel closed?", e.0.1)
+            });
     };
 
     // Combine recursive requests and input requests.
@@ -108,21 +112,31 @@ pub(crate) async fn check(
 
     // Perform requests. This is the only part of the main pipeline that happens concurrently.
     let check_responses = requests
-        .map(async |(guard, request)| -> (WaitGuard, Response) {
-            let check_url = |r| check_url(&client, r);
-            // TODO: eventually, this should be a checker that uses a cache, rather than
-            // a cache that uses a checker.
-            let response = cache
-                .handle(&client, &cache_exclude_status, &accept, request, check_url)
-                .await;
-            (guard, response)
-        })
-        .buffer_unordered(max_concurrency);
+        .map_with_arg(
+            Arc::new((accept, cache_exclude_status)),
+            |arc, (guard, request)| {
+                let arc = arc.clone();
+                async move {
+                    let (client, cache) = guard.get();
+                    let (accept, cache_exclude_status) = &*arc;
+                    let check_url = |r| check_url(&client, r);
+
+                    // TODO: eventually, this should be a checker that uses a cache, rather than
+                    // a cache that uses a checker.
+                    let response = cache
+                        .handle(&client, &cache_exclude_status, &accept, request, check_url)
+                        .await;
+
+                    (guard, response)
+                }
+            },
+        )
+        .par_buffer_unordered(max_concurrency, max_concurrency);
 
     let responses = futures::stream::select(check_responses, request_building_errors);
 
     // Increment stats and extract recursive uris from responses.
-    let recursive_uris = responses.map(|(_guard, response)| -> Vec<(WaitGuard, Request)> {
+    let recursive_uris = responses.map(|(_guard, response)| -> Vec<(WaitGuard<_>, Request)> {
         progress.update(Some(response.body()));
         stats.add(response);
 
@@ -176,6 +190,7 @@ pub(crate) async fn check(
         true => ExitCode::Success,
         false => ExitCode::LinkCheckFailure,
     };
+    let (client, cache) = waiter.into_inner().await;
     Ok((stats, cache, code, client.host_pool()))
 }
 
