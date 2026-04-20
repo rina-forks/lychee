@@ -31,11 +31,15 @@ pub(crate) fn extract_markdown(
     include_verbatim: bool,
     include_wikilinks: bool,
 ) -> Vec<RawUri> {
-    // In some cases it is undesirable to extract links from within code blocks,
-    // which is why we keep track of entries and exits while traversing the input.
+    // In some cases it is undesirable to extract links from within certain nodes.
+    // Links within text of these nodes are omitted by default but included with `include_verbatim`.
     let mut inside_code_block = false;
-    let mut inside_link_block = false;
-    let mut inside_wikilink_block = false;
+    let mut inside_link_text = false;
+
+    // Links within text of these nodes are unconditionally excluded. These represent
+    // links which are already extracted by another part of the parser.
+    let mut inside_wikilink_text = false;
+    let mut inside_autolink_text = false;
 
     // HTML blocks come in chunks from pulldown_cmark, so we need to accumulate them
     let mut inside_html_block = false;
@@ -60,7 +64,7 @@ pub(crate) fn extract_markdown(
                     // Inline link like `[foo](bar)`
                     // This is the most common link type
                     LinkType::Inline => {
-                        inside_link_block = true;
+                        inside_link_text = true;
                         Some(raw_uri(&dest_url, span_provider.span(span.start)))
                     }
                     // Reference without destination in the document, but resolved by the `broken_link_callback`
@@ -75,7 +79,7 @@ pub(crate) fn extract_markdown(
                     LinkType::Shortcut |
                     // Shortcut without destination in the document, but resolved by the `broken_link_callback`
                     LinkType::ShortcutUnknown => {
-                        inside_link_block = true;
+                        inside_link_text = true;
                         // For reference links, create RawUri directly to handle relative file paths
                         // that linkify doesn't recognize as URLs
                         Some(raw_uri(&dest_url, span_provider.span(span.start)))
@@ -84,6 +88,7 @@ pub(crate) fn extract_markdown(
                     LinkType::Autolink |
                     // Email address in autolink like `<john@example.org>`
                     LinkType::Email => {
+                        inside_autolink_text = true;
                         let span_provider = get_email_span_provider(&span_provider, &span, link_type);
                         Some(extract_raw_uri_from_plaintext(&dest_url, &span_provider))
                     }
@@ -93,7 +98,7 @@ pub(crate) fn extract_markdown(
                         if !include_wikilinks {
                             return None;
                         }
-                        inside_wikilink_block = true;
+                        inside_wikilink_text = true;
                         // Ignore gitlab toc notation: https://docs.gitlab.com/user/markdown/#table-of-contents
                         if ["_TOC_".to_string(), "TOC".to_string()].contains(&dest_url.to_string()) {
                             return None;
@@ -129,9 +134,9 @@ pub(crate) fn extract_markdown(
 
             // A text node.
             Event::Text(txt) => {
-                if inside_wikilink_block
-                    || (inside_link_block && !include_verbatim)
-                    || (inside_code_block && !include_verbatim) {
+                if inside_wikilink_text || inside_autolink_text {
+                    None
+                } else if !include_verbatim && (inside_code_block || inside_link_text) {
                     None
                 } else {
                     Some(extract_raw_uri_from_plaintext(
@@ -205,8 +210,9 @@ pub(crate) fn extract_markdown(
             }
 
             Event::End(TagEnd::Link) => {
-                inside_link_block = false;
-                inside_wikilink_block = false;
+                inside_link_text = false;
+                inside_autolink_text = false;
+                inside_wikilink_text = false;
                 None
             }
 
@@ -823,5 +829,21 @@ Shortcut link: [link4]
             span: span(1, 3),
         }];
         assert_eq!(uris, expected);
+    }
+
+    #[test]
+    fn test_extract_autolinks() {
+        let markdown = r"<https://a.com>";
+        let uris = extract_markdown(markdown, true, true)
+            .into_iter()
+            .map(|x| x.text)
+            .collect::<Vec<_>>();
+        assert_eq!(uris, vec!["https://a.com"]);
+
+        let uris = extract_markdown(markdown, false, true)
+            .into_iter()
+            .map(|x| x.text)
+            .collect::<Vec<_>>();
+        assert_eq!(uris, vec!["https://a.com"]);
     }
 }
