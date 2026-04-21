@@ -81,32 +81,26 @@ impl GithubSlugify {
     /// This function will mutate the [`GithubSlugify`] to record the returned
     /// string.
     fn disambiguate(&mut self, base_slug: String) -> String {
-        let mut suffix = self.count.get(&base_slug).copied();
+        const ONE: NonZeroUsize = NonZeroUsize::MIN;
+        let mut next_suffix = ONE;
         let mut slug = base_slug.clone();
 
-        loop {
+        while Some(n) = self.count.get(&slug) && next_suffix != NonZeroUsize::MAX {
+            if next_suffix == ONE {
+                next_suffix = n;
+            }
+            
             slug.truncate(base_slug.len());
+            slug.push('-');
+            slug.push_str(&next_suffix.to_string());
+            
+            next_suffix = next_suffix.saturating_add(1);
+        };
 
-            let next_suffix = if let Some(non_zero) = suffix {
-                slug.push('-');
-                slug.push_str(&non_zero.to_string());
-                non_zero.saturating_add(1)
-            } else {
-                NonZeroUsize::MIN
-            };
-
-            if !self.count.contains_key(&slug) || next_suffix == NonZeroUsize::MAX {
-                break;
-            }
-
-            if let None = self.count.get_mut(&base_slug).map(|val| *val = next_suffix) {
-                self.count.insert(base_slug.clone(), next_suffix);
-            }
-
-            suffix = Some(next_suffix);
+        self.count.insert(base_slug, next_suffix);
+        if next_suffix != ONE {
+            self.count.insert(slug.clone(), NonZeroUsize::MIN);
         }
-
-        self.count.insert(slug.clone(), NonZeroUsize::MIN);
         slug
     }
 
