@@ -1,0 +1,24 @@
+FROM alpine
+
+RUN apk add --update --no-cache git pre-commit curl
+RUN git config --global advice.defaultBranchName false \
+    && git config --global user.email "you@example.com" \
+    && git config --global user.name "Your Name"
+WORKDIR /workdir
+
+ARG LYCHEE_VERSION
+COPY <<EOF .pre-commit-config.yaml
+repos:
+-   repo: https://github.com/lycheeverse/lychee
+    rev: lychee-v$LYCHEE_VERSION
+    hooks:
+    -   id: lychee
+        verbose: true
+        # args: ["LYCHEE_VERSION=0.24.0", "--no-progress"]
+EOF
+
+RUN echo 'file:///broken-link' > a.txt
+RUN git init && git add . && pre-commit install
+
+RUN git commit -m a >&1 | tee commit-output && grep -q 'file:///broken-link' commit-output
+RUN /root/.cache/pre-commit/repo*/.cargo/bin/lychee* --version

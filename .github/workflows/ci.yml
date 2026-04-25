@@ -68,12 +68,14 @@ jobs:
       - name: Verify the MSRV
         run: make verify
 
-  binstall-check:
+  pre-commit-hook-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: cargo-bins/cargo-binstall@main
-      - run: cargo binstall --manifest-path . --strategies crate-meta-data lychee --no-confirm
+      - name: Containerized test of pre-commit hook using cargo-binstall
+      - run:
+          export LYCHEE_VERSION="$(grep '^version =' Cargo.toml | cut -d'"' -f2)"
+          docker build --file .github/Dockerfile.pre-commit-test --build-arg "LYCHEE_VERSION=$LYCHEE_VERSION"
 
   publish-check:
     runs-on: ubuntu-latest
