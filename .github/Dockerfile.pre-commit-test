@@ -20,5 +20,5 @@ EOF
 RUN echo 'file:///broken-link' > a.txt
 RUN git init && git add . && pre-commit install
 
-RUN git commit -m a >&1 | tee commit-output && grep -q 'file:///broken-link' commit-output
+RUN set -x ; git commit -m a 2>&1 | tee commit-output ; grep 'file:///broken-link' commit-output
 RUN /root/.cache/pre-commit/repo*/.cargo/bin/lychee* --version
