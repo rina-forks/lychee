@@ -3,12 +3,18 @@
 
 use std::borrow::Borrow;
 use std::hash::Hash;
+use std::iter::FilterMap;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
 use dashmap::DashMap;
+use dashmap::iter::Iter;
+use dashmap::iter::OwningIter;
 use dashmap::mapref::entry::Entry;
+use dashmap::mapref::multiple::RefMulti;
+use dashmap::mapref::one::MappedRef;
 use tokio::sync::watch;
 
 /// Cache for asynchronous operations. Each operation is associated with a key,
@@ -34,12 +40,13 @@ impl<T> CacheGetter<T> {
     /// the future will be ready immediately.
     ///
     /// # Errors
-    /// Resolves to an error if the corresponding [`CacheSetter`] has been
+    /// Resolves to an error if the corresponding [`CacheSetter`] is
     /// dropped without setting a value.
     pub async fn get(mut self) -> Result<Arc<T>, watch::error::RecvError> {
         let received = self.0.wait_for(Option::is_some).await?;
-        let arc = received.as_ref().expect("impossible due to is_some check");
-        Ok(arc.clone())
+
+        #[expect(clippy::missing_panics_doc, reason = "impossible due to is_some check")]
+        Ok(received.as_ref().unwrap().clone())
     }
 }
 
@@ -51,11 +58,11 @@ impl<T> CacheGetter<T> {
 /// This can be avoided by calling [`CacheSetter::with_fallback`] which will
 /// specify a fallback closure in case it is prematurely dropped.
 #[derive(Debug)]
+#[must_use]
 pub struct CacheSetter<T>(watch::Sender<Option<Arc<T>>>);
 
 impl<T> CacheSetter<T> {
     /// Constructs a new [`CacheSetter`] writing into the given [`watch::Sender`].
-    #[must_use]
     pub(crate) const fn new(sender: watch::Sender<Option<Arc<T>>>) -> Self {
         Self(sender)
     }
@@ -116,6 +123,7 @@ where
         K: Borrow<T>,
     {
         if let Some(entry) = self.data.get(key.borrow()) {
+            self.num_hits.fetch_add(1, Ordering::Relaxed);
             return Err(CacheGetter(entry.clone()));
         }
 
@@ -131,6 +139,52 @@ where
                 Err(CacheGetter(occupied.get().clone()))
             }
         }
+    }
+
+    pub(self) fn cache_entry_into_pair(
+        (k, recv): (K, watch::Receiver<Option<Arc<V>>>),
+    ) -> Option<(K, V)> {
+        let arc = Self::get_cache_value(&recv)?;
+        let v = Arc::into_inner(arc)?;
+        Some((k, v))
+    }
+
+    pub(self) fn get_cache_value(recv: &watch::Receiver<Option<Arc<V>>>) -> Option<Arc<V>> {
+        Some(recv.borrow().as_ref()?.clone())
+    }
+
+    /// a
+    pub fn into_iter(
+        self,
+    ) -> FilterMap<
+        OwningIter<K, watch::Receiver<Option<Arc<V>>>>,
+        fn((K, watch::Receiver<Option<Arc<V>>>)) -> Option<(K, V)>,
+    > {
+        self.data
+            .into_iter()
+            .filter_map(Self::cache_entry_into_pair)
+    }
+
+    pub fn iter<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = MappedRef<'a, K, watch::Receiver<Option<Arc<V>>>, Arc<V>>> {
+        self.data.iter().filter_map(|entry| {
+            self.data
+                .get(entry.key())?
+                .try_map(|recv| Some(recv.borrow().as_ref()?))
+                .ok()
+        })
+    }
+}
+
+struct CacheRef<'a, K, V> {
+    map: &'a DashMap<K, watch::Receiver<Option<Arc<V>>>>,
+    mapref: RefMulti<'a, K, watch::Receiver<Option<Arc<V>>>>,
+}
+
+impl<'a, K: Hash + Eq, V> CacheRef<'a, K, V> {
+    pub fn pair(&self) -> (&K, &V) {
+        let (k, v) = self.0.pair();
     }
 }
 
@@ -156,6 +210,15 @@ where
     }
 }
 
+impl<K, V> std::fmt::Debug for Cache<K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cache")
+            .field("num_hits", &self.num_hits)
+            .field("num_misses", &self.num_misses)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<K, V> FromIterator<(K, V)> for Cache<K, V>
 where
     K: Hash + Eq,
@@ -166,11 +229,5 @@ where
             cache.insert(k, v);
         }
         cache
-    }
-}
-
-impl<K, V> std::fmt::Debug for Cache<K, V> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Cache").finish_non_exhaustive()
     }
 }
