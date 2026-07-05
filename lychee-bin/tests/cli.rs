@@ -2486,6 +2486,7 @@ The config file should contain every possible key for documentation purposes."
         let result = cargo_bin_cmd!()
             .arg("--include-fragments")
             .arg("--format=json")
+            .arg("--exclude-path=/special-casing\\.")
             .arg("-vv")
             .arg(input)
             .assert()
@@ -2546,10 +2547,7 @@ The config file should contain every possible key for documentation purposes."
             "https://github.com/lycheeverse/lychee#non-existent-anchor",
         ];
 
-        assert_eq!(actual_successes.len(), expected_successes.len());
-        assert_eq!(actual_errors.len(), expected_errors.len());
-
-        for good_url in expected_successes {
+        for good_url in &expected_successes {
             assert!(
                 actual_successes.iter().any(|url| url.ends_with(good_url)),
                 "Expected {good_url} to be a success"
@@ -2562,6 +2560,9 @@ The config file should contain every possible key for documentation purposes."
                 "Expected {bad_url} to be an error"
             );
         }
+
+        assert_eq!(actual_successes.len(), expected_successes.len());
+        assert_eq!(actual_errors.len(), expected_errors.len());
 
         fn extract_urls(json: &Value) -> HashSet<&str> {
             json.as_object()
