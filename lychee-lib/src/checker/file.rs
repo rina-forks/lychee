@@ -665,6 +665,13 @@ mod tests {
             Ok("fallback-extensions/file. hi.md")
         );
 
+        // fallback extensions which are not the first one should also work
+        assert_resolves!(
+            &checker,
+            "fallback-extensions/file2. hi",
+            Ok("fallback-extensions/file2. hi.gz")
+        );
+
         // fallback extensions replace pre-existing extensions.
         assert_resolves!(
             &checker,
