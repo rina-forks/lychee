@@ -1,5 +1,6 @@
 use std::fmt::{self, Display};
 
+use super::write_host_heading;
 use lychee_lib::ratelimit::HostStatsMap;
 
 pub(crate) struct DetailedHostStats {
@@ -12,7 +13,7 @@ impl Display for DetailedHostStats {
             return Ok(());
         };
 
-        writeln!(f, "\n📊 Per-host Statistics")?;
+        write_host_heading(f, "\n📊 ", host_stats)?;
         writeln!(f, "---------------------")?;
 
         for (hostname, stats) in host_stats.sorted() {

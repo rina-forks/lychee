@@ -1,5 +1,6 @@
 use std::fmt::{self, Display};
 
+use super::write_host_heading;
 use crate::formatters::color::{DIM, NORMAL, color};
 use lychee_lib::ratelimit::HostStatsMap;
 
@@ -13,8 +14,7 @@ impl Display for CompactHostStats {
             return Ok(());
         };
 
-        writeln!(f)?;
-        writeln!(f, "📊 Per-host Statistics")?;
+        write_host_heading(f, "\n📊 ", host_stats)?;
 
         let separator = "─".repeat(60);
         color!(f, DIM, "{}", separator)?;
