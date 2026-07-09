@@ -1666,7 +1666,7 @@ The config file should contain every possible key for documentation purposes."
     async fn test_no_duplicate_requests() {
         let server = wiremock::MockServer::start().await;
         let count = 100; // given 100 duplicate URLs
-        let cached = "99.0%"; // we expect 99 out of 100 to be cached
+        let cached = "99%"; // we expect 99 out of 100 to be cached
 
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(|_: &_| {
@@ -1687,8 +1687,9 @@ The config file should contain every possible key for documentation purposes."
             .arg("--host-request-interval=1s")
             .assert()
             .success()
-            .stdout(contains("100.0% success"))
-            .stdout(contains(format!("{cached} cached")));
+            .stdout(contains("100 reqs"))
+            .stdout(contains(format!("({cached} cached)")))
+            .stdout(contains("[✓ 100]"));
     }
 
     #[tokio::test]
@@ -1730,9 +1731,9 @@ The config file should contain every possible key for documentation purposes."
             // Per-host statistics
             // 2 rate limited + 8 OK
             .stdout(contains("10 reqs"))
-            .stdout(contains("80.0% success"))
+            .stdout(contains("[✓ 8, ✗ 2]"))
             // 2 rate limited, 1 OK, 7 cached
-            .stdout(contains("70.0% cached"));
+            .stdout(contains("(70% cached)"));
 
         server.verify().await;
         Ok(())

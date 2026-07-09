@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 
-use super::write_host_heading;
-use crate::formatters::color::{DIM, NORMAL, color};
+use super::{host_heading, status_summary};
+use crate::formatters::color::{NORMAL, color};
 use lychee_lib::ratelimit::HostStatsMap;
 
 pub(crate) struct CompactHostStats {
@@ -14,39 +14,26 @@ impl Display for CompactHostStats {
             return Ok(());
         };
 
-        write_host_heading(f, "\n📊 ", host_stats)?;
-
-        let separator = "─".repeat(60);
-        color!(f, DIM, "{}", separator)?;
-        writeln!(f)?;
+        writeln!(f, "{}", host_heading("\n📊 ", host_stats))?;
 
         let sorted_hosts = host_stats.sorted();
-
-        // Calculate optimal hostname width based on longest hostname
-        let max_hostname_len = sorted_hosts
+        let hostname_width = sorted_hosts
             .iter()
             .map(|(hostname, _)| hostname.len())
             .max()
-            .unwrap_or(0);
-        let hostname_width = (max_hostname_len + 2).max(10); // At least 10 chars with padding
+            .unwrap_or(0)
+            .max(10);
 
         for (hostname, stats) in sorted_hosts {
-            let median_time = stats
-                .median_request_time()
-                .map_or_else(|| "N/A".to_string(), |d| format!("{:.0}ms", d.as_millis()));
-
-            let cache_hit_rate = stats.cache_hit_rate() * 100.0;
+            let status_summary = status_summary(&stats);
+            let cache_summary = stats.cache_summary();
 
             color!(
                 f,
                 NORMAL,
-                "{:<width$} │ {:>6} reqs │ {:>6.1}% success │ {:>8} median │ {:>6.1}% cached",
-                hostname,
+                "  {hostname:<width$}  {:>6} reqs  {cache_summary:>12}    {status_summary}",
                 stats.total_requests,
-                stats.success_rate() * 100.0,
-                median_time,
-                cache_hit_rate,
-                width = hostname_width
+                width = hostname_width,
             )?;
             writeln!(f)?;
         }
