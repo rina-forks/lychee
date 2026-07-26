@@ -17,7 +17,7 @@ mod github_fragments {
     fn extract_special_casing_html(html: &str) -> impl std::iter::Iterator<Item = (&str, &str)> {
         fn extract_line(l: &str) -> (&str, &str) {
             let title = l.split_once("</h1>").unwrap().0.rsplit_once('>').unwrap().1;
-            let href = "href=\"";
+            let href = "href=\"#";
             let id = l.split_once(href).unwrap().1.split_once('"').unwrap().0;
             (title, id)
         }

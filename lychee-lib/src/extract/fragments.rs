@@ -150,7 +150,6 @@ impl GithubHeadingIdGenerator {
 mod tests {
     use percent_encoding::percent_decode_str;
     use rstest::rstest;
-    use test_utils::load_fixture;
 
     use super::{GithubHeadingIdGenerator, generate_without_disambiguation};
 
