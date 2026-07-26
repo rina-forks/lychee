@@ -20,6 +20,7 @@ a = sys.stdin.read()
 a = a.split('Language-Sensitive Mappings', 1)[0]
 
 # Turn contiguous regions beginning with '#' into Markdown code blocks
+# This is just to give the context for each special casing rule and doesn't affect the test itself.
 a = re.sub(r'^#[^\n]*\n\n', lambda x: x[0].rstrip() + '\n```\n\n', a, flags=re.MULTILINE)
 a = re.sub(r'\n\n#', '\n\n```\n#', a)
 
