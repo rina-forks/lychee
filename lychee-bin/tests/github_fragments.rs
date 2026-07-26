@@ -36,7 +36,7 @@ mod github_fragments {
         let text = text.replace("; &", ";&");
         let text = text.replace(";;", ";-");
 
-        Ok(format!("```\n{text}\n```"))
+        Ok(format!("```\n{text}\n```\n"))
     }
 
     /// Given HTML rendered by the Github API, this will extract
@@ -126,9 +126,6 @@ mod github_fragments {
             Ok(resp) => {
                 let expected = convert_special_casing_txt_to_markdown().await?;
                 let actual = resp.text().await?;
-
-                let expected = expected.trim_end();
-                let actual = actual.trim_end();
 
                 // If not equal, write to a tempdir. The strings are too
                 // big to be readable in `assert_eq!`.
