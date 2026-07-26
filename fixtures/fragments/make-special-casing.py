@@ -9,6 +9,8 @@ For example:
 
     curl https://www.unicode.org/Public/UNIDATA/SpecialCasing.txt | fixtures/fragments/make-special-casing.py > fixtures/fragments/special-casing.md
 
+Then, push this Markdown content to Github in some repository (doesn't need to
+be in the main branch), and update the reference in `tests/github_fragments.rs`
 """
 
 a = sys.stdin.read()

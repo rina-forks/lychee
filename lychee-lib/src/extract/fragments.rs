@@ -246,23 +246,4 @@ mod tests {
                 .collect::<Vec<_>>()
         );
     }
-
-    #[rstest]
-    fn test_special_casing() {
-        let a = load_fixture!("fragments/special-casing.html");
-        for l in a.lines() {
-            if l.contains("class=\"markdown-heading\"") {
-                let title = l.split_once("</h1>").unwrap().0.rsplit_once('>').unwrap().1;
-                let expected = l
-                    .split_once("id=\"user-content-")
-                    .unwrap()
-                    .1
-                    .split_once('"')
-                    .unwrap()
-                    .0;
-                let actual = generate_without_disambiguation(title);
-                assert_eq!(expected, actual);
-            }
-        }
-    }
 }
