@@ -1,7 +1,15 @@
 #[cfg(test)]
 mod github_fragments {
+
+    use std::error::Error;
+
     use lychee_lib::extract::fragments::generate_without_disambiguation;
     use tempfile::tempdir;
+    use test_utils::fixtures_path;
+
+    const API_URL: &str = "https://api.github.com/repos/lycheeverse/lychee/contents";
+    const FILE_PATH: &str = "/fixtures/fragments/special-casing.md";
+    const COMMIT: &str = "0788e393989c4f1f747529324189a8a74d6f2e96";
 
     async fn convert_special_casing_txt_to_markdown() -> Result<String, reqwest::Error> {
         let resp =
@@ -64,10 +72,6 @@ mod github_fragments {
             .map(extract_line)
     }
 
-    const API_URL: &'static str = "https://api.github.com/repos/lycheeverse/lychee/contents";
-    const FILE_PATH: &'static str = "/fixtures/fragments/special-casing.md";
-    const COMMIT: &'static str = "0788e393989c4f1f747529324189a8a74d6f2e96";
-
     fn github_request_builder(accept: &str) -> reqwest::RequestBuilder {
         let mut auth_header = reqwest::header::HeaderMap::new();
         if let Ok(token) = std::env::var("GITHUB_TOKEN") {
@@ -114,42 +118,39 @@ mod github_fragments {
         }
     }
 
-    /// Tests that the markdown file in Github has the correct format and matches
-    /// the output of [`convert_special_casing_txt_to_markdown`].
+    fn special_casing_md_path() -> std::path::PathBuf {
+        fixtures_path!().join("fragments/special-casing.md")
+    }
+
+    fn load_special_casing_md() -> Result<String, std::io::Error> {
+        let actual =
+            std::fs::read_to_string(special_casing_md_path()).or_else(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => Ok(String::new()),
+                _ => Err(e),
+            })?;
+
+        Ok(actual.replace("\r\n", "\n"))
+    }
+
+    /// Tests that the [`COMMIT`] and [`FILE_PATH`] references a file which is identical
+    /// to the in-repo `special-casing.md`.
     #[tokio::test]
-    async fn test_special_casing_md_contents() -> Result<(), reqwest::Error> {
+    async fn test_remote_special_casing_md() -> Result<(), Box<dyn Error>> {
+        let expected = load_special_casing_md()?;
+
         let resp = github_request_builder("application/vnd.github.raw+json")
             .send()
             .await;
 
         match resp.and_then(reqwest::Response::error_for_status) {
             Ok(resp) => {
-                let expected = convert_special_casing_txt_to_markdown().await?;
-                let actual = resp.text().await?;
-
-                // If not equal, write to a tempdir. The strings are too
-                // big to be readable in `assert_eq!`.
-                if expected != actual {
-                    let mut temp = tempdir().unwrap();
-                    temp.disable_cleanup(true);
-
-                    let expected_path = temp.path().join("expected.md");
-                    let actual_path = temp.path().join("actual.md");
-                    println!(
-                        "Uploaded special-casing.md does not match! Writing \
-                        expected and actual contents to: {}",
-                        temp.path().to_string_lossy()
-                    );
-                    println!(
-                        "\nSee:\n    diff -u {} {}\n",
-                        actual_path.to_string_lossy(),
-                        expected_path.to_string_lossy(),
-                    );
-
-                    std::fs::write(expected_path, &expected).unwrap();
-                    std::fs::write(actual_path, &actual).unwrap();
-                }
-                assert!(expected == actual);
+                assert!(
+                    resp.text().await? == expected,
+                    "Local and remote special-casing.md don't match! If \
+                        `test_local_special_casing_md` is also failing, fix that first. \
+                        Otherwise, push the local special-casing.md to Github \
+                        and update the `COMMIT` in this test module."
+                );
                 Ok(())
             }
             Err(err)
@@ -160,7 +161,45 @@ mod github_fragments {
                 println!("Ignoring 429 in live Github fragment slugify test");
                 Ok(())
             }
-            Err(err) => Err(err),
+            Err(err) => Err(err)?,
         }
+    }
+
+    /// Tests that the markdown file in repo has the correct format and matches
+    /// the output of [`convert_special_casing_txt_to_markdown`].
+    #[tokio::test]
+    async fn test_local_special_casing_md() -> Result<(), Box<dyn Error>> {
+        let actual = load_special_casing_md()?;
+        let expected = convert_special_casing_txt_to_markdown().await?;
+
+        // If not equal, write to a tempdir. The strings are too
+        // big to be readable in `assert_eq!`.
+        if expected != actual {
+            let mut temp = tempdir().unwrap();
+            temp.disable_cleanup(true);
+
+            let expected_path = temp.path().join("expected.md");
+            let actual_path = temp.path().join("actual.md");
+            println!(
+                "In-repo special-casing.md does not match! Writing \
+                 expected and actual contents to: {}",
+                temp.path().to_string_lossy()
+            );
+            println!(
+                "\nTo inspect:\n    diff -u {} {}",
+                actual_path.to_string_lossy(),
+                expected_path.to_string_lossy(),
+            );
+            println!(
+                "\nTo apply:\n    cp -v {} {}\n",
+                expected_path.to_string_lossy(),
+                special_casing_md_path().to_string_lossy(),
+            );
+
+            std::fs::write(expected_path, &expected).unwrap();
+            std::fs::write(actual_path, &actual).unwrap();
+        }
+        assert!(expected == actual);
+        Ok(())
     }
 }
