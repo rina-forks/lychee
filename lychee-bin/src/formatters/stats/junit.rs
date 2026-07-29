@@ -108,8 +108,8 @@ mod tests {
         assert_eq!(
             result,
             r#"<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="lychee link check results" tests="3" failures="1" errors="0">
-    <testsuite name="lychee link check results" tests="3" disabled="1" errors="0" failures="1">
+<testsuites name="lychee link check results" tests="3" skipped="1" failures="1" errors="0">
+    <testsuite name="lychee link check results" tests="3" skipped="1" errors="0" failures="1">
         <testcase name="Failed https://github.com/mre/idiomatic-rust-doesnt-exist-man" time="1.000" file="https://example.com/" line="1">
             <failure message="https://github.com/mre/idiomatic-rust-doesnt-exist-man (at 1:1) | Rejected status code: 404 Not Found"/>
             <system-out>https://github.com/mre/idiomatic-rust-doesnt-exist-man (at 1:1) | Rejected status code: 404 Not Found</system-out>
