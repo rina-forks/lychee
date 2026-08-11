@@ -518,6 +518,11 @@ pub(crate) struct Config {
     /// or `full` to check both.
     ///
     /// If provided without a value, defaults to `anchor-only`.
+    ///
+    /// Fragment checking does not work for every URL. In general, the target
+    /// content needs to be Markdown or HTML and follow common conventions.
+    /// Anchors that only appear after JavaScript execution may be missed, since
+    /// lychee does not run a browser engine.
     #[arg(
         long,
         default_missing_value = "anchor-only",
