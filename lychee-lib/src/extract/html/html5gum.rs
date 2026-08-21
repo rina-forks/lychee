@@ -814,7 +814,7 @@ mod tests {
     }
 
     /// No URLs are found because the spec does not allow spaces after
-    /// the opening `<`. https://html.spec.whatwg.org/multipage/syntax.html#start-tags
+    /// the opening `<`. <https://html.spec.whatwg.org/multipage/syntax.html#start-tags>
     #[test]
     fn test_extract_links_line_split() {
         let input = r#"
