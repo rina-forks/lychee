@@ -352,6 +352,21 @@ impl<S: SpanProvider> Callback<(), usize> for &mut LinkExtractor<S> {
     }
 }
 
+fn run_extractor<S: SpanProvider>(
+    buf: &str,
+    include_verbatim: bool,
+    span_provider: S,
+) -> LinkExtractor<S> {
+    let mut extractor = LinkExtractor::new(span_provider, include_verbatim);
+
+    let mut emitter = CallbackEmitter::new(&mut extractor);
+    emitter.naively_switch_states(true); // https://github.com/untitaker/html5gum/blob/0.8.4/examples/tokenize_with_state_switches.rs
+
+    let mut tokenizer = Tokenizer::new_with_emitter(buf, emitter);
+    assert!(tokenizer.next().is_none());
+    extractor
+}
+
 /// Extract unparsed URL strings from an HTML string.
 pub(crate) fn extract_html(buf: &str, include_verbatim: bool) -> Vec<RawUri> {
     extract_html_with_span(buf, include_verbatim, SourceSpanProvider::from_input(buf))
@@ -362,10 +377,7 @@ pub(crate) fn extract_html_with_span<S: SpanProvider>(
     include_verbatim: bool,
     span_provider: S,
 ) -> Vec<RawUri> {
-    let mut extractor = LinkExtractor::new(span_provider, include_verbatim);
-    let mut tokenizer = Tokenizer::new_with_emitter(buf, CallbackEmitter::new(&mut extractor));
-    assert!(tokenizer.next().is_none());
-    extractor
+    run_extractor(buf, include_verbatim, span_provider)
         .links
         .into_iter()
         .filter(|link| link.attribute.is_some() || include_verbatim)
@@ -374,11 +386,7 @@ pub(crate) fn extract_html_with_span<S: SpanProvider>(
 
 /// Extract fragments from id attributes within a HTML string.
 pub(crate) fn extract_html_fragments(buf: &str) -> HashSet<String> {
-    let span_provider = SourceSpanProvider::from_input(buf);
-    let mut extractor = LinkExtractor::new(span_provider, true);
-    let mut tokenizer = Tokenizer::new_with_emitter(buf, CallbackEmitter::new(&mut extractor));
-    assert!(tokenizer.next().is_none());
-    extractor.fragments
+    run_extractor(buf, true, SourceSpanProvider::from_input(buf)).fragments
 }
 
 #[cfg(test)]
@@ -803,5 +811,53 @@ mod tests {
 
         let uris = extract_html(input, false);
         assert_eq!(uris, expected);
+    }
+
+    /// No URLs are found because the spec does not allow spaces after
+    /// the opening `<`. https://html.spec.whatwg.org/multipage/syntax.html#start-tags
+    #[test]
+    fn test_extract_links_line_split() {
+        let input = r#"
+        <body>
+            See <
+                a
+                href="https://example.com/1"
+            >First</a>
+        </body>
+        "#;
+        let uris = extract_html(input, false);
+        assert_eq!(uris, vec![]);
+    }
+
+    /// Should ignore `<a` that occurs within a `<script>`.
+    #[test]
+    fn test_html_in_script() {
+        let input = r#"
+        <!doctype html><html><body>
+        <a href="/before">b</a>
+        <script>for(var b=0;b<a.length;b+=2){}</script>
+        <a href="/after">a</a>
+        </body></html>
+        "#;
+        let uris = extract_html(input, false);
+        assert_eq!(
+            uris.iter().map(|x| &*x.text).collect::<Vec<_>>(),
+            vec!["/before", "/after"]
+        );
+    }
+
+    /// Should ignore `<a` that occurs within a `<style>` or `<title>`.
+    #[test]
+    fn test_html_in_style() {
+        let input = r#"
+        <title>x<a href="/inside-title">y</a></title>
+        <style>a{}<a href="/inside-style">z</style>
+        <p>x<a href="/inside-p">y</a></p>
+        "#;
+        let uris = extract_html(input, false);
+        assert_eq!(
+            uris.iter().map(|x| &*x.text).collect::<Vec<&str>>(),
+            vec!["/inside-p"]
+        );
     }
 }
