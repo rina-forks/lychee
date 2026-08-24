@@ -830,6 +830,7 @@ mod tests {
     }
 
     /// Should ignore `<a` that occurs within a `<script>`.
+    /// This prevents a regression of [#2287](https://github.com/lycheeverse/lychee/issues/2287).
     #[test]
     fn test_html_in_script() {
         let input = r#"
