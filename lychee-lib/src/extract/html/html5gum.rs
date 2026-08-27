@@ -363,7 +363,7 @@ fn run_extractor<S: SpanProvider>(
     emitter.naively_switch_states(true); // https://github.com/untitaker/html5gum/blob/0.8.4/examples/tokenize_with_state_switches.rs
 
     let mut tokenizer = Tokenizer::new_with_emitter(buf, emitter);
-    assert!(tokenizer.next().is_none());
+    debug_assert!(tokenizer.next().is_none());
     extractor
 }
 
